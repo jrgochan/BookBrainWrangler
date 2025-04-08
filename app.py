@@ -58,6 +58,22 @@ if 'thumbnail_bg_color' not in st.session_state:
 if 'thumbnail_text_color' not in st.session_state:
     st.session_state.thumbnail_text_color = (70, 70, 70)
 
+# OCR process settings
+if "ocr_display_interval" not in st.session_state:
+    st.session_state.ocr_display_interval = 1  # Display every Nth image
+if "ocr_confidence_threshold" not in st.session_state:
+    st.session_state.ocr_confidence_threshold = 70  # Minimum confidence %
+if "ocr_show_current_image" not in st.session_state:
+    st.session_state.ocr_show_current_image = True  # Show current image
+if "ocr_show_extracted_text" not in st.session_state:
+    st.session_state.ocr_show_extracted_text = True  # Show extracted text
+if "ocr_current_image" not in st.session_state:
+    st.session_state.ocr_current_image = None  # Current image
+if "ocr_current_text" not in st.session_state:
+    st.session_state.ocr_current_text = None  # Current text
+if "ocr_current_confidence" not in st.session_state:
+    st.session_state.ocr_current_confidence = None  # Current confidence
+
 # Initialize components
 book_manager, document_processor, knowledge_base, ollama_client = initialize_components()
 
@@ -108,6 +124,12 @@ if app_mode == "Book Management":
                 if 'latest_status_updates' not in st.session_state:
                     st.session_state.latest_status_updates = []
                 
+                # Create containers for OCR visualization
+                ocr_image_container = st.empty()
+                ocr_text_container = st.empty()
+                ocr_confidence_container = st.empty()
+                
+                # Define progress callback function with enhanced OCR visualization
                 def update_progress(current, total, message):
                     if total > 0:
                         progress_value = min(current / total, 1.0)
@@ -115,16 +137,73 @@ if app_mode == "Book Management":
                     else:
                         progress_bar.progress(0)
                     
-                    # Update status text
-                    status_text.text(message)
-                    
-                    # Add to latest updates list (keep only last 3)
-                    st.session_state.latest_status_updates.append(message)
-                    if len(st.session_state.latest_status_updates) > 3:
-                        st.session_state.latest_status_updates.pop(0)
-                    
-                    # Show the most recent updates
-                    last_update_container.info("\n".join(st.session_state.latest_status_updates))
+                    # Handle both string and dictionary message formats
+                    if isinstance(message, dict):
+                        # For structured messages (especially from OCR)
+                        status_msg = message.get("text", "Processing...")
+                        action = message.get("action", "")
+                        
+                        # Update status text
+                        status_text.text(status_msg)
+                        
+                        # Add to latest updates list (keep only last 3)
+                        st.session_state.latest_status_updates.append(status_msg)
+                        if len(st.session_state.latest_status_updates) > 3:
+                            st.session_state.latest_status_updates.pop(0)
+                        
+                        # Show the most recent updates
+                        last_update_container.info("\n".join(st.session_state.latest_status_updates))
+                        
+                        # Handle OCR-specific updates with image and text display
+                        if "current_image" in message and st.session_state.ocr_show_current_image:
+                            # Only update the display based on the configured interval
+                            page_num = current + 1  # 1-based page number for display
+                            if page_num % st.session_state.ocr_display_interval == 0 or page_num == 1 or page_num == total:
+                                # Store the current OCR state
+                                st.session_state.ocr_current_image = message["current_image"]
+                                
+                                # Display the current image being processed
+                                ocr_image_container.image(
+                                    f"data:image/jpeg;base64,{message['current_image']}", 
+                                    caption=f"Page {page_num}/{total}", 
+                                    use_column_width=True
+                                )
+                        
+                        # Display the extracted OCR text if available
+                        if "ocr_text" in message and st.session_state.ocr_show_extracted_text:
+                            st.session_state.ocr_current_text = message["ocr_text"]
+                            if action == "completed":  # Only show completed OCR text
+                                ocr_text_container.text_area(
+                                    "Extracted Text", 
+                                    message["ocr_text"], 
+                                    height=150
+                                )
+                        
+                        # Display OCR confidence if available
+                        if "confidence" in message:
+                            confidence = message["confidence"]
+                            st.session_state.ocr_current_confidence = confidence
+                            
+                            # Format confidence as percentage
+                            conf_text = f"OCR Confidence: {confidence:.1f}%"
+                            
+                            # Determine color based on threshold
+                            if confidence < st.session_state.ocr_confidence_threshold:
+                                conf_text = f"⚠️ {conf_text} (Low Quality)"
+                                ocr_confidence_container.error(conf_text)
+                            else:
+                                ocr_confidence_container.success(conf_text)
+                    else:
+                        # Legacy string message format
+                        status_text.text(message)
+                        
+                        # Add to latest updates list (keep only last 3)
+                        st.session_state.latest_status_updates.append(message)
+                        if len(st.session_state.latest_status_updates) > 3:
+                            st.session_state.latest_status_updates.pop(0)
+                        
+                        # Show the most recent updates
+                        last_update_container.info("\n".join(st.session_state.latest_status_updates))
                 
                 # Display initial info for PDFs
                 if file_ext == '.pdf':
@@ -600,7 +679,7 @@ elif app_mode == "Settings":
     st.title("Settings")
     
     # Tabs for different settings categories
-    settings_tab1, settings_tab2 = st.tabs(["Ollama AI Settings", "Thumbnail Settings"])
+    settings_tab1, settings_tab2, settings_tab3 = st.tabs(["Ollama AI Settings", "Thumbnail Settings", "OCR Settings"])
     
     # Ollama Settings Tab
     with settings_tab1:
@@ -767,6 +846,108 @@ elif app_mode == "Settings":
                 
             st.success("Thumbnail settings saved successfully!")
             st.info("Thumbnails will be regenerated with your new settings.")
+    
+    # OCR Settings Tab
+    with settings_tab3:
+        st.header("OCR Processing Settings")
+        
+        st.write("Configure how the OCR (Optical Character Recognition) process works and what information is displayed during processing.")
+        
+        # Create columns for settings
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Display Settings")
+            
+            # Toggle for showing current image
+            show_current_image = st.toggle(
+                "Show current image being processed", 
+                value=st.session_state.ocr_show_current_image
+            )
+            
+            # Toggle for showing extracted text
+            show_extracted_text = st.toggle(
+                "Show extracted text", 
+                value=st.session_state.ocr_show_extracted_text
+            )
+            
+            # Display interval (for skipping images)
+            display_interval = st.slider(
+                "Display every nth image", 
+                min_value=1, 
+                max_value=10, 
+                value=st.session_state.ocr_display_interval,
+                help="Higher values will show fewer images during processing, which may improve performance."
+            )
+        
+        with col2:
+            st.subheader("OCR Quality Settings")
+            
+            # Confidence threshold slider
+            confidence_threshold = st.slider(
+                "Confidence threshold (%)", 
+                min_value=0, 
+                max_value=100, 
+                value=st.session_state.ocr_confidence_threshold,
+                help="Pages with confidence below this percentage will be flagged as potentially low quality."
+            )
+            
+            # Example confidence display
+            if confidence_threshold > 0:
+                # Show example of low and high confidence
+                st.write("**Sample confidence indicators:**")
+                
+                if confidence_threshold > 80:
+                    st.info("Most pages will be flagged as low quality with this high threshold")
+                
+                # High confidence example
+                st.success(f"OCR Confidence: 92.5% (Good Quality)")
+                
+                # Low confidence example
+                st.error(f"⚠️ OCR Confidence: {confidence_threshold - 10:.1f}% (Low Quality)")
+        
+        # Last processed OCR image preview
+        if st.session_state.ocr_current_image:
+            st.subheader("Last Processed Image Preview")
+            
+            # Show the image and extracted text side by side
+            preview_col1, preview_col2 = st.columns(2)
+            
+            with preview_col1:
+                st.image(
+                    f"data:image/jpeg;base64,{st.session_state.ocr_current_image}", 
+                    caption="Last Processed Image", 
+                    use_column_width=True
+                )
+            
+            with preview_col2:
+                if st.session_state.ocr_current_text:
+                    st.text_area(
+                        "Extracted Text", 
+                        st.session_state.ocr_current_text, 
+                        height=200
+                    )
+                    
+                    if st.session_state.ocr_current_confidence:
+                        conf_text = f"OCR Confidence: {st.session_state.ocr_current_confidence:.1f}%"
+                        if st.session_state.ocr_current_confidence < confidence_threshold:
+                            st.error(f"⚠️ {conf_text} (Low Quality)")
+                        else:
+                            st.success(conf_text)
+                else:
+                    st.info("No text has been extracted yet")
+        else:
+            st.info("No images have been processed yet. Upload a PDF to see OCR results.")
+        
+        # Save button
+        if st.button("Save OCR Settings"):
+            # Update session state
+            st.session_state.ocr_show_current_image = show_current_image
+            st.session_state.ocr_show_extracted_text = show_extracted_text
+            st.session_state.ocr_display_interval = display_interval
+            st.session_state.ocr_confidence_threshold = confidence_threshold
+            
+            st.success("OCR settings saved successfully!")
 
 # Footer
 st.sidebar.markdown("---")

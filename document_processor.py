@@ -87,39 +87,59 @@ class DocumentProcessor:
         # Get total page count for progress tracking
         total_pages = self.get_page_count(pdf_path)
         
+        # Helper to handle both string and dict message formats
+        def send_progress(current, total, message):
+            if progress_callback:
+                if isinstance(message, str):
+                    # Convert string messages to dict format for consistency
+                    progress_callback(current, total, {"text": message})
+                else:
+                    # Already a dict, pass it through
+                    progress_callback(current, total, message)
+        
         # Update progress
-        if progress_callback:
-            progress_callback(0, total_pages, "Starting PDF content extraction")
+        send_progress(0, total_pages, "Starting PDF content extraction")
         
         # First try direct text extraction
-        if progress_callback:
-            progress_callback(0, total_pages, "Attempting direct text extraction")
+        send_progress(0, total_pages, "Attempting direct text extraction")
         
-        extracted_text = self._extract_text_direct(pdf_path, progress_callback)
+        extracted_text = self._extract_text_direct(pdf_path, send_progress)
         
         # If the PDF has little or no text, it might be a scanned document
         # In that case, use OCR to extract the text
         use_ocr = False
         if not extracted_text or len(extracted_text.strip()) < 100:  # Arbitrary threshold
-            if progress_callback:
-                progress_callback(0, total_pages, "Direct extraction yielded little text, switching to OCR")
+            send_progress(0, total_pages, {
+                "text": "Direct extraction yielded little text, switching to OCR",
+                "action": "switching_to_ocr"
+            })
             extracted_text = self._extract_text_ocr(pdf_path, progress_callback)
             use_ocr = True
         
         # Extract images if requested
         extracted_images = []
         if include_images:
-            if progress_callback:
-                progress_callback(0, total_pages, "Starting image extraction from PDF")
+            send_progress(0, total_pages, {
+                "text": "Starting image extraction from PDF",
+                "action": "extracting_images"
+            })
             
-            extracted_images = self._extract_images_from_pdf(pdf_path, total_pages, progress_callback)
+            extracted_images = self._extract_images_from_pdf(pdf_path, total_pages, send_progress)
             
-            if progress_callback:
-                progress_callback(total_pages, total_pages, f"Extracted {len(extracted_images)} images")
+            send_progress(total_pages, total_pages, {
+                "text": f"Extracted {len(extracted_images)} images",
+                "action": "images_extracted",
+                "image_count": len(extracted_images)
+            })
         
         # Final progress update
-        if progress_callback:
-            progress_callback(total_pages, total_pages, "PDF content extraction complete")
+        send_progress(total_pages, total_pages, {
+            "text": "PDF content extraction complete",
+            "action": "complete",
+            "used_ocr": use_ocr,
+            "image_count": len(extracted_images),
+            "text_length": len(extracted_text)
+        })
         
         return {
             'text': extracted_text,
@@ -242,6 +262,11 @@ class DocumentProcessor:
         Args:
             pdf_path: Path to the PDF file
             progress_callback: Optional callback function for progress updates
+                The callback can receive these additional parameters in the 'message' dict:
+                - 'current_image': base64 string of the current image being processed
+                - 'ocr_text': extracted text from the current image
+                - 'confidence': estimated OCR confidence for the current page
+                - 'action': what's happening ('extracting', 'processing', 'completed')
             
         Returns:
             Extracted text as a string
@@ -268,17 +293,42 @@ class DocumentProcessor:
                     image_path = os.path.join(path, f'page_{i}.png')
                     image.save(image_path, 'PNG')
                     
+                    # Convert current image to base64 for display in UI
+                    img_buffer = io.BytesIO()
+                    image.save(img_buffer, format='JPEG', quality=85)
+                    img_buffer.seek(0)
+                    img_str = base64.b64encode(img_buffer.read()).decode('utf-8')
+                    
                     # Update progress before OCR (which can be time-consuming)
                     if progress_callback:
-                        progress_callback(i, total_images, f"OCR: Processing page {i + 1}/{total_images}")
+                        progress_callback(i, total_images, {
+                            "text": f"OCR: Processing page {i + 1}/{total_images}",
+                            "current_image": img_str,
+                            "action": "processing"
+                        })
                     
-                    # Extract text from the image
+                    # Extract text from the image with confidence data
+                    ocr_data = pytesseract.image_to_data(image_path, output_type=pytesseract.Output.DICT)
+                    
+                    # Extract the plain text
                     page_text = pytesseract.image_to_string(image_path)
+                    
+                    # Calculate average confidence for this page
+                    conf_values = [conf for conf in ocr_data.get('conf', []) if conf != -1]  # Filter out -1 values
+                    avg_confidence = sum(conf_values) / len(conf_values) if conf_values else 0
+                    
+                    # Add the text to our full document text
                     text += page_text + "\n\n"
                     
-                    # Update progress after OCR completion for this page
+                    # Update progress after OCR completion for this page with the OCR text and confidence
                     if progress_callback:
-                        progress_callback(i + 1, total_images, f"OCR: Completed page {i + 1}/{total_images}")
+                        progress_callback(i + 1, total_images, {
+                            "text": f"OCR: Completed page {i + 1}/{total_images}",
+                            "current_image": img_str,
+                            "ocr_text": page_text.strip(),
+                            "confidence": avg_confidence,
+                            "action": "completed"
+                        })
             
             return text
             
