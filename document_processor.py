@@ -13,7 +13,22 @@ from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 class DocumentProcessor:
     def __init__(self):
         """Initialize the document processor with default settings."""
-        pass
+        self.metadata_patterns = {
+            'title': [
+                r'title:\s*([^\n]+)',
+                r'^(?:book\s+)?title[:\s]+([^\n]+)',
+                r'(?:^|\n)([A-Z][^\n]{5,50})(?:\n|$)',  # Capitalized line that could be a title
+            ],
+            'author': [
+                r'(?:author|by)(?:s)?:\s*([^\n]+)',
+                r'(?:written|published)\s+by\s+([^\n]+)',
+                r'©\s*([^\n]+)',  # Copyright symbol followed by name
+            ],
+            'categories': [
+                r'(?:category|categories|genre|genres|subject|subjects):\s*([^\n]+)',
+                r'(?:keywords|tags):\s*([^\n]+)'
+            ]
+        }
     
     def extract_content(self, file_path, include_images=True, progress_callback=None):
         """
@@ -170,6 +185,93 @@ class DocumentProcessor:
             'text': 'This is placeholder text for a DOCX document.',
             'images': []
         }
+    
+    def extract_metadata(self, file_path, content=None):
+        """
+        Extract book metadata (title, author, categories) from a document.
+        
+        Args:
+            file_path: Path to the document file
+            content: Optional pre-extracted content to use instead of re-extracting
+            
+        Returns:
+            A dictionary with metadata fields:
+            {
+                'title': Extracted title or None if not found,
+                'author': Extracted author or None if not found,
+                'categories': List of extracted categories or empty list if none found
+            }
+        """
+        # Initialize result
+        metadata = {
+            'title': None,
+            'author': None,
+            'categories': []
+        }
+        
+        # Get content if not provided
+        if content is None:
+            # Only extract the first few pages for metadata (faster)
+            try:
+                extracted = self.extract_content(file_path, include_images=False)
+                if isinstance(extracted, dict):
+                    content = extracted.get('text', '')
+                else:
+                    content = extracted
+            except Exception as e:
+                print(f"Error extracting content for metadata: {e}")
+                return metadata
+        
+        # Process content to extract metadata
+        if content and isinstance(content, str):
+            # Extract file name as fallback title (without extension)
+            file_name = os.path.basename(file_path)
+            file_name_no_ext = os.path.splitext(file_name)[0]
+            metadata['title'] = file_name_no_ext  # Default to file name
+            
+            # Get first 1000 characters for metadata extraction (usually in the beginning)
+            # Also check the entire content but prioritize matches near the beginning
+            beginning = content[:1000]
+            
+            # Look for title
+            for pattern in self.metadata_patterns['title']:
+                # First check beginning of document
+                match = re.search(pattern, beginning, re.IGNORECASE)
+                if match:
+                    metadata['title'] = match.group(1).strip()
+                    break
+                    
+                # If not found in beginning, check full document
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    metadata['title'] = match.group(1).strip()
+                    break
+            
+            # Look for author
+            for pattern in self.metadata_patterns['author']:
+                # Check beginning first
+                match = re.search(pattern, beginning, re.IGNORECASE)
+                if match:
+                    metadata['author'] = match.group(1).strip()
+                    break
+                    
+                # If not found in beginning, check full document
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    metadata['author'] = match.group(1).strip()
+                    break
+            
+            # Look for categories
+            for pattern in self.metadata_patterns['categories']:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    categories_str = match.group(1).strip()
+                    # Split categories by common delimiters
+                    categories = re.split(r'[,;|/]', categories_str)
+                    metadata['categories'] = [cat.strip() for cat in categories if cat.strip()]
+                    break
+        
+        return metadata
     
     def get_page_count(self, pdf_path):
         """

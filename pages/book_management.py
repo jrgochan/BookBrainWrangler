@@ -50,14 +50,56 @@ def render_upload_section(book_manager, document_processor):
         type=["pdf", "docx"]
     )
     
-    # Book metadata inputs
+    # Auto-extract metadata from uploaded file
+    extracted_metadata = {}
+    if uploaded_file and 'extracted_metadata' not in st.session_state:
+        # Save uploaded file temporarily to extract metadata
+        try:
+            file_ext = os.path.splitext(uploaded_file.name)[1].lower()
+            temp_path = f"temp_metadata_{int(time.time())}{file_ext}"
+            
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            # Show metadata extraction status
+            with st.status("Extracting metadata...", expanded=False) as status:
+                st.write("Analyzing document for metadata...")
+                # Extract metadata
+                extracted_metadata = document_processor.extract_metadata(temp_path)
+                status.update(label="Metadata extracted!", state="complete")
+                
+                # Store in session state to avoid re-extracting
+                st.session_state.extracted_metadata = extracted_metadata
+                
+                # Clean up temp file
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass  # Ignore errors in cleanup
+        except Exception as e:
+            st.warning(f"Could not extract metadata automatically: {str(e)}")
+            st.session_state.extracted_metadata = {}
+    
+    # Use extracted metadata if available
+    if uploaded_file and 'extracted_metadata' in st.session_state:
+        extracted_metadata = st.session_state.extracted_metadata
+    
+    # Book metadata inputs - pre-fill with extracted data if available
     col1, col2 = st.columns(2)
     with col1:
-        book_title = st.text_input("Book Title")
+        book_title = st.text_input("Book Title", 
+                                  value=extracted_metadata.get('title', '') if extracted_metadata else '')
     with col2:
-        book_author = st.text_input("Book Author")
+        book_author = st.text_input("Book Author", 
+                                   value=extracted_metadata.get('author', '') if extracted_metadata else '')
     
-    book_category = st.text_input("Category (comma-separated for multiple categories)")
+    # Join categories with commas if they exist
+    default_categories = ''
+    if extracted_metadata and 'categories' in extracted_metadata and extracted_metadata['categories']:
+        default_categories = ', '.join(extracted_metadata.get('categories', []))
+    
+    book_category = st.text_input("Category (comma-separated for multiple categories)",
+                                 value=default_categories)
     
     # Process button
     if uploaded_file and st.button("Process Book"):
@@ -182,12 +224,19 @@ def render_upload_section(book_manager, document_processor):
             
             st.success(f"Book '{book_title}' successfully processed and added to your library!")
             
-            # Clear the form
+            # Clear the form and extracted metadata
+            if 'extracted_metadata' in st.session_state:
+                del st.session_state.extracted_metadata
+                
             st.rerun()
             
         except Exception as e:
             status_container.text(f"Error: {str(e)}")
             st.error(f"Error processing book: {e}")
+            
+            # Clear extracted metadata on error for next attempt
+            if 'extracted_metadata' in st.session_state:
+                del st.session_state.extracted_metadata
 
 def render_library_section(book_manager):
     """
