@@ -11,7 +11,9 @@ from utils import (
     generate_thumbnail, 
     generate_placeholder_thumbnail, 
     generate_knowledge_export, 
-    save_markdown_to_file
+    save_markdown_to_file,
+    generate_word_cloud,
+    analyze_word_frequency
 )
 
 # Initialize the components
@@ -87,7 +89,7 @@ book_manager, document_processor, knowledge_base, ollama_client = initialize_com
 st.sidebar.title("Book Knowledge AI")
 app_mode = st.sidebar.selectbox(
     "Select Mode",
-    ["Book Management", "Knowledge Base", "Chat with AI", "Knowledge Base Explorer", "Settings"]
+    ["Book Management", "Knowledge Base", "Chat with AI", "Knowledge Base Explorer", "Word Cloud Generator", "Settings"]
 )
 
 # Book Management section
@@ -1039,6 +1041,216 @@ elif app_mode == "Knowledge Base Explorer":
             st.dataframe(book_details_df[['Title', 'Author', 'Document Count']], use_container_width=True)
         else:
             st.info("No books found in the knowledge base statistics.")
+
+# Word Cloud Generator page
+elif app_mode == "Word Cloud Generator":
+    st.title("Word Cloud Generator")
+    st.write("Create visual word clouds from your books to identify key concepts and frequent terms.")
+    
+    # Initialize session state for word cloud settings if not present
+    if 'wc_max_words' not in st.session_state:
+        st.session_state.wc_max_words = 200
+    if 'wc_colormap' not in st.session_state:
+        st.session_state.wc_colormap = 'viridis'
+    if 'wc_background_color' not in st.session_state:
+        st.session_state.wc_background_color = 'white'
+    if 'wc_include_numbers' not in st.session_state:
+        st.session_state.wc_include_numbers = False
+    if 'wc_custom_stopwords' not in st.session_state:
+        st.session_state.wc_custom_stopwords = ""
+    
+    # Book selection
+    st.subheader("Select Book")
+    
+    # Get all books
+    all_books = book_manager.get_all_books()
+    
+    if not all_books:
+        st.info("No books found in your library. Add some books first!")
+    else:
+        # Create a list of book titles with authors for the selectbox
+        book_options = [f"{book['title']} by {book['author']}" for book in all_books]
+        book_ids = [book['id'] for book in all_books]
+        
+        # Add an option to analyze all books
+        book_options.insert(0, "All Books (Combined Analysis)")
+        book_ids.insert(0, None)
+        
+        # Let user select a book
+        selected_book_index = st.selectbox(
+            "Choose a book to analyze:",
+            range(len(book_options)),
+            format_func=lambda i: book_options[i]
+        )
+        
+        selected_book_id = book_ids[selected_book_index]
+        
+        # Word cloud settings
+        st.subheader("Word Cloud Settings")
+        
+        settings_col1, settings_col2 = st.columns(2)
+        
+        with settings_col1:
+            max_words = st.slider("Maximum number of words:", 50, 500, st.session_state.wc_max_words)
+            if max_words != st.session_state.wc_max_words:
+                st.session_state.wc_max_words = max_words
+                
+            colormaps = [
+                'viridis', 'plasma', 'inferno', 'magma', 'cividis',
+                'Greys', 'Blues', 'Greens', 'Oranges', 'Reds',
+                'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu',
+                'rainbow', 'jet', 'turbo', 'gnuplot', 'gnuplot2'
+            ]
+            colormap = st.selectbox("Color scheme:", colormaps, index=colormaps.index(st.session_state.wc_colormap) if st.session_state.wc_colormap in colormaps else 0)
+            if colormap != st.session_state.wc_colormap:
+                st.session_state.wc_colormap = colormap
+        
+        with settings_col2:
+            bg_colors = ['white', 'black', 'lightgrey', 'cornsilk', 'aliceblue', 'lavender', 'mintcream']
+            bg_color = st.selectbox("Background color:", bg_colors, index=bg_colors.index(st.session_state.wc_background_color) if st.session_state.wc_background_color in bg_colors else 0)
+            if bg_color != st.session_state.wc_background_color:
+                st.session_state.wc_background_color = bg_color
+            
+            include_numbers = st.checkbox("Include numbers", st.session_state.wc_include_numbers)
+            if include_numbers != st.session_state.wc_include_numbers:
+                st.session_state.wc_include_numbers = include_numbers
+        
+        # Advanced settings in an expander
+        with st.expander("Advanced Settings"):
+            custom_stopwords = st.text_area(
+                "Custom stopwords (comma-separated words to exclude):",
+                st.session_state.wc_custom_stopwords,
+                help="Add words you want to exclude from the word cloud, separated by commas"
+            )
+            if custom_stopwords != st.session_state.wc_custom_stopwords:
+                st.session_state.wc_custom_stopwords = custom_stopwords
+        
+        # Generate button
+        if st.button("Generate Word Cloud"):
+            with st.spinner("Generating word cloud..."):
+                # Get the text content for analysis
+                if selected_book_id is None:
+                    # Combine text from all books
+                    combined_text = ""
+                    for book in all_books:
+                        content = book_manager.get_book_content(book['id'])
+                        if content:
+                            combined_text += content + " "
+                    
+                    if not combined_text.strip():
+                        st.error("No text content found in any books.")
+                    else:
+                        # Process the combined text
+                        text_to_analyze = combined_text
+                        title = "Combined Analysis of All Books"
+                        author = ""
+                else:
+                    # Get the selected book
+                    selected_book = next((book for book in all_books if book['id'] == selected_book_id), None)
+                    if selected_book:
+                        content = book_manager.get_book_content(selected_book_id)
+                        if not content:
+                            st.error(f"No text content found for book: {selected_book['title']}")
+                        else:
+                            # Process the book content
+                            text_to_analyze = content
+                            title = selected_book['title']
+                            author = selected_book['author']
+                
+                # Parse custom stopwords
+                stopwords_list = None
+                if st.session_state.wc_custom_stopwords:
+                    stopwords_list = [word.strip().lower() for word in st.session_state.wc_custom_stopwords.split(',') if word.strip()]
+                
+                # Generate the word cloud
+                word_cloud_image = generate_word_cloud(
+                    text_to_analyze,
+                    max_words=st.session_state.wc_max_words,
+                    colormap=st.session_state.wc_colormap,
+                    background_color=st.session_state.wc_background_color,
+                    include_numbers=st.session_state.wc_include_numbers,
+                    stopwords=stopwords_list
+                )
+                
+                if word_cloud_image:
+                    # Display the word cloud
+                    st.subheader(f"Word Cloud: {title}")
+                    if author:
+                        st.caption(f"by {author}")
+                    
+                    st.image(word_cloud_image, use_column_width=True)
+                    
+                    # Get word frequency data
+                    word_frequencies = analyze_word_frequency(
+                        text_to_analyze,
+                        max_words=50,  # Show top 50 words
+                        stopwords=stopwords_list,
+                        include_numbers=st.session_state.wc_include_numbers
+                    )
+                    
+                    # Display word frequency table
+                    st.subheader("Word Frequency Analysis")
+                    
+                    # Create frequency dataframe
+                    import pandas as pd
+                    freq_df = pd.DataFrame(word_frequencies, columns=["Word", "Frequency"])
+                    
+                    # Display as table and bar chart side by side
+                    freq_col1, freq_col2 = st.columns([1, 2])
+                    
+                    with freq_col1:
+                        st.dataframe(freq_df.head(20), hide_index=True)
+                    
+                    with freq_col2:
+                        # Create a horizontal bar chart of top words
+                        chart_data = freq_df.head(15).iloc[::-1]  # Reverse for bottom-to-top display
+                        st.bar_chart(chart_data.set_index("Word"), use_container_width=True)
+                    
+                    # Word cloud insights
+                    st.subheader("Insights")
+                    
+                    # Calculate statistics
+                    total_unique_words = len(word_frequencies)
+                    total_word_occurrences = sum(freq for _, freq in word_frequencies)
+                    
+                    # Display basic statistics
+                    stats_col1, stats_col2, stats_col3 = st.columns(3)
+                    
+                    with stats_col1:
+                        st.metric("Top Word", word_frequencies[0][0] if word_frequencies else "N/A")
+                    
+                    with stats_col2:
+                        st.metric("Unique Words", total_unique_words)
+                    
+                    with stats_col3:
+                        st.metric("Total Words Analyzed", total_word_occurrences)
+                        
+                    # Topic suggestions based on top words
+                    if word_frequencies:
+                        top_words = [word for word, _ in word_frequencies[:10]]
+                        st.write("**Potential Key Topics:**")
+                        st.write(", ".join(top_words))
+                    
+                    # Allow downloading the image
+                    st.markdown("### Download Word Cloud")
+                    st.markdown(f"Right-click on the image and select 'Save image as...' to download.")
+                    
+                    # Additional information
+                    with st.expander("About Word Clouds"):
+                        st.write("""
+                        **Word clouds** visually represent text data where the size of each word indicates its frequency 
+                        or importance. They are useful for quickly identifying the most prominent terms in a document.
+                        
+                        **Tips for interpretation:**
+                        - Larger words appear more frequently in the text
+                        - Colors are used to enhance visual distinction, not for specific meaning
+                        - Common words like "the", "and", "to" are automatically removed as stopwords
+                        - You can add your own stopwords in the Advanced Settings section
+                        
+                        Use word clouds as a starting point for identifying key themes and concepts in your books.
+                        """)
+                else:
+                    st.error("Failed to generate word cloud. Please check if the book contains enough text content.")
 
 # Settings page
 elif app_mode == "Settings":

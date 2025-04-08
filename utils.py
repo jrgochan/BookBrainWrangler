@@ -506,3 +506,161 @@ def save_markdown_to_file(markdown_content, file_path=None):
     except Exception as e:
         print(f"Error saving markdown file: {e}")
         return None
+
+def generate_word_cloud(text, max_words=200, width=800, height=400, background_color='white', 
+                      colormap='viridis', stopwords=None, mask=None, min_font_size=10,
+                      max_font_size=None, include_numbers=False):
+    """
+    Generate a word cloud image from text content.
+    
+    Args:
+        text: Text content to generate word cloud from
+        max_words: Maximum number of words to include
+        width: Width of the output image
+        height: Height of the output image
+        background_color: Background color name or hex code
+        colormap: Matplotlib colormap name
+        stopwords: Additional stopwords to exclude (list of strings)
+        mask: Optional numpy array mask for custom shape (if None, uses rectangle)
+        min_font_size: Minimum font size
+        max_font_size: Maximum font size (if None, auto-calculated)
+        include_numbers: Whether to include numbers in the word cloud
+        
+    Returns:
+        Base64 encoded string of the word cloud image
+    """
+    import io
+    import base64
+    import numpy as np
+    from wordcloud import WordCloud, STOPWORDS
+    import matplotlib.pyplot as plt
+    from nltk.tokenize import word_tokenize
+    from nltk.corpus import stopwords as nltk_stopwords
+    
+    # Guard against empty text
+    if not text or len(text.strip()) == 0:
+        return None
+        
+    # Combine NLTK and WordCloud stopwords
+    combined_stopwords = set(STOPWORDS)
+    try:
+        # Add NLTK English stopwords
+        combined_stopwords.update(nltk_stopwords.words('english'))
+    except:
+        # If NLTK data not available, continue with default stopwords
+        pass
+        
+    # Add custom stopwords if provided
+    if stopwords:
+        combined_stopwords.update(set(stopwords))
+    
+    # Preprocess text - filter out numbers if not including them
+    if not include_numbers:
+        # Tokenize and filter tokens
+        try:
+            tokens = word_tokenize(text)
+            # Remove tokens that are just numbers
+            tokens = [token for token in tokens if not token.isdigit()]
+            text = ' '.join(tokens)
+        except:
+            # If NLTK tokenization fails, use simple regex to remove standalone numbers
+            import re
+            text = re.sub(r'\b\d+\b', '', text)
+    
+    # Create the WordCloud object
+    wc = WordCloud(
+        background_color=background_color,
+        max_words=max_words,
+        width=width,
+        height=height,
+        colormap=colormap,
+        stopwords=combined_stopwords,
+        min_font_size=min_font_size,
+        max_font_size=max_font_size,
+        random_state=42  # For reproducibility
+    )
+    
+    # Generate the word cloud
+    wc.generate(text)
+    
+    # Convert to image
+    plt.figure(figsize=(width/100, height/100), dpi=100)
+    plt.imshow(wc, interpolation='bilinear')
+    plt.axis('off')
+    
+    # Save to a byte buffer
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png', bbox_inches='tight', pad_inches=0)
+    plt.close()
+    buffer.seek(0)
+    
+    # Convert to base64
+    return f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode('utf-8')}"
+
+def analyze_word_frequency(text, max_words=100, stopwords=None, include_numbers=False):
+    """
+    Analyze word frequency in text content.
+    
+    Args:
+        text: Text content to analyze
+        max_words: Maximum number of words to include in results
+        stopwords: Additional stopwords to exclude (list of strings)
+        include_numbers: Whether to include numbers in analysis
+        
+    Returns:
+        List of (word, count) tuples sorted by frequency
+    """
+    from collections import Counter
+    from nltk.tokenize import word_tokenize
+    from nltk.corpus import stopwords as nltk_stopwords
+    import re
+    
+    # Guard against empty text
+    if not text or len(text.strip()) == 0:
+        return []
+    
+    # Combine NLTK stopwords with custom stopwords
+    combined_stopwords = set()
+    try:
+        # Add NLTK English stopwords
+        combined_stopwords.update(nltk_stopwords.words('english'))
+    except:
+        # If NLTK data not available, continue with empty stopwords
+        pass
+        
+    # Add custom stopwords if provided
+    if stopwords:
+        combined_stopwords.update(set(stopwords))
+    
+    # Preprocess text
+    text = text.lower()  # Convert to lowercase
+    
+    # Tokenize words
+    try:
+        words = word_tokenize(text)
+    except:
+        # Fallback to simple word splitting if NLTK fails
+        words = re.findall(r'\b\w+\b', text)
+    
+    # Filter words
+    filtered_words = []
+    for word in words:
+        # Skip short words (likely not meaningful)
+        if len(word) <= 1:
+            continue
+            
+        # Skip numbers if not including them
+        if not include_numbers and word.isdigit():
+            continue
+            
+        # Skip stopwords
+        if word.lower() in combined_stopwords:
+            continue
+            
+        filtered_words.append(word)
+    
+    # Count word frequencies
+    word_counts = Counter(filtered_words)
+    
+    # Return most common words up to max_words
+    return word_counts.most_common(max_words)

@@ -29,3 +29,11 @@ matplotlib
 pandas
 plotly
 scikit-learn
+nltk
+wordcloud
+matplotlib
+nltk
+pandas
+plotly
+scikit-learn
+wordcloud
