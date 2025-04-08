@@ -5,7 +5,7 @@ from book_manager import BookManager
 from document_processor import DocumentProcessor
 from knowledge_base import KnowledgeBase
 from ollama_client import OllamaClient
-from utils import cleanup_text
+from utils import cleanup_text, generate_thumbnail, generate_placeholder_thumbnail
 
 # Initialize the components
 @st.cache_resource
@@ -48,6 +48,14 @@ if 'ollama_host' not in st.session_state:
     st.session_state.ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 if 'ollama_model' not in st.session_state:
     st.session_state.ollama_model = os.environ.get("OLLAMA_MODEL", "llama2")
+    
+# Thumbnail settings
+if 'thumbnail_size' not in st.session_state:
+    st.session_state.thumbnail_size = (200, 280)
+if 'thumbnail_bg_color' not in st.session_state:
+    st.session_state.thumbnail_bg_color = (240, 240, 240)
+if 'thumbnail_text_color' not in st.session_state:
+    st.session_state.thumbnail_text_color = (70, 70, 70)
 
 # Initialize components
 book_manager, document_processor, knowledge_base, ollama_client = initialize_components()
@@ -192,24 +200,63 @@ if app_mode == "Book Management":
     if not books:
         st.info("No books found in your library. Upload some books to get started!")
     else:
-        for book in books:
-            with st.expander(f"{book['title']} by {book['author']}"):
-                col1, col2, col3 = st.columns([3, 1, 1])
-                
-                with col1:
-                    st.write(f"**Categories:** {', '.join(book['categories'])}")
-                    st.write(f"**Added on:** {book['date_added']}")
-                
-                with col2:
-                    if st.button(f"Edit", key=f"edit_{book['id']}"):
-                        st.session_state.book_to_edit = book['id']
-                        st.rerun()
-                
-                with col3:
-                    if st.button(f"Delete", key=f"delete_{book['id']}"):
-                        book_manager.delete_book(book['id'])
-                        st.success(f"Book '{book['title']}' deleted successfully!")
-                        st.rerun()
+        # Initialize thumbnail cache in session state if not already present
+        if 'thumbnail_cache' not in st.session_state:
+            st.session_state.thumbnail_cache = {}
+        
+        # Display book cards in a grid layout
+        book_columns = st.columns(3)  # Display books in 3 columns
+        
+        for i, book in enumerate(books):
+            with book_columns[i % 3]:
+                with st.container(border=True):
+                    # Generate or retrieve thumbnail from cache
+                    if book['id'] in st.session_state.thumbnail_cache:
+                        thumbnail = st.session_state.thumbnail_cache[book['id']]
+                    elif 'file_path' in book and book['file_path'] and os.path.exists(book['file_path']):
+                        thumbnail = generate_thumbnail(
+                            book['file_path'],
+                            max_size=st.session_state.thumbnail_size
+                        )
+                        st.session_state.thumbnail_cache[book['id']] = thumbnail
+                    else:
+                        # Create a placeholder with book title if file not found
+                        thumbnail = generate_placeholder_thumbnail(
+                            book['title'],
+                            size=st.session_state.thumbnail_size,
+                            bg_color=st.session_state.thumbnail_bg_color,
+                            text_color=st.session_state.thumbnail_text_color
+                        )
+                        st.session_state.thumbnail_cache[book['id']] = thumbnail
+                    
+                    # Center the thumbnail and make it clickable
+                    col1, col2, col3 = st.columns([1, 3, 1])
+                    with col2:
+                        st.image(thumbnail, use_column_width=True)
+                    
+                    # Book title and author
+                    st.markdown(f"### {book['title']}")
+                    st.markdown(f"*by {book['author']}*")
+                    
+                    # Categories and date added
+                    st.markdown(f"**Categories:** {', '.join(book['categories'])}")
+                    st.markdown(f"**Added:** {book['date_added']}")
+                    
+                    # Book actions
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button(f"Edit", key=f"edit_{book['id']}"):
+                            st.session_state.book_to_edit = book['id']
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button(f"Delete", key=f"delete_{book['id']}"):
+                            book_manager.delete_book(book['id'])
+                            # Remove from thumbnail cache if it exists
+                            if book['id'] in st.session_state.thumbnail_cache:
+                                del st.session_state.thumbnail_cache[book['id']]
+                            st.success(f"Book '{book['title']}' deleted successfully!")
+                            st.rerun()
     
     # Book editing modal
     if hasattr(st.session_state, 'book_to_edit'):
@@ -319,31 +366,55 @@ elif app_mode == "Knowledge Base":
                         if 'kb_status_updates' in st.session_state:
                             st.session_state.kb_status_updates = []
         
-        for book in all_books:
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                is_in_kb = book['id'] in kb_book_ids
-                if st.checkbox(
-                    f"{book['title']} by {book['author']}",
-                    value=is_in_kb,
-                    key=f"kb_{book['id']}"
-                ):
-                    # This means the checkbox is checked (book should be in KB)
-                    if not is_in_kb:
-                        # Book isn't in KB yet but should be - toggle it
-                        toggle_book_with_progress(book['id'], is_in_kb)
-                else:
-                    # Checkbox is unchecked (book should not be in KB)
+        # Initialize thumbnail cache if needed
+        if 'kb_thumbnail_cache' not in st.session_state:
+            st.session_state.kb_thumbnail_cache = {}
+    
+        # Display book cards in a grid layout
+        book_columns = st.columns(3)  # Display books in 3 columns
+        
+        for i, book in enumerate(all_books):
+            with book_columns[i % 3]:
+                with st.container(border=True):
+                    # Generate or retrieve thumbnail from cache
+                    if book['id'] in st.session_state.kb_thumbnail_cache:
+                        thumbnail = st.session_state.kb_thumbnail_cache[book['id']]
+                    elif 'file_path' in book and book['file_path'] and os.path.exists(book['file_path']):
+                        thumbnail = generate_thumbnail(
+                            book['file_path'],
+                            max_size=st.session_state.thumbnail_size
+                        )
+                        st.session_state.kb_thumbnail_cache[book['id']] = thumbnail
+                    else:
+                        # Create a placeholder with book title if file not found
+                        thumbnail = generate_placeholder_thumbnail(
+                            book['title'],
+                            size=st.session_state.thumbnail_size,
+                            bg_color=st.session_state.thumbnail_bg_color,
+                            text_color=st.session_state.thumbnail_text_color
+                        )
+                        st.session_state.kb_thumbnail_cache[book['id']] = thumbnail
+                    
+                    # Display thumbnail
+                    st.image(thumbnail, use_column_width=True)
+                    
+                    # Book title and author
+                    st.markdown(f"### {book['title']}")
+                    st.markdown(f"*by {book['author']}*")
+                    
+                    # Knowledge base status and toggle
+                    is_in_kb = book['id'] in kb_book_ids
                     if is_in_kb:
-                        # Book is in KB but shouldn't be - toggle it
+                        st.markdown("**Status:** ✅ In Knowledge Base")
+                    else:
+                        st.markdown("**Status:** ❌ Not Included")
+                    
+                    # Toggle button
+                    if st.button(
+                        "Remove from KB" if is_in_kb else "Add to KB",
+                        key=f"kb_toggle_{book['id']}"
+                    ):
                         toggle_book_with_progress(book['id'], is_in_kb)
-            
-            with col2:
-                if book['id'] in kb_book_ids:
-                    st.write("✅ In Knowledge Base")
-                else:
-                    st.write("❌ Not Included")
         
         # Button to rebuild the entire knowledge base
         if st.button("Rebuild Complete Knowledge Base"):
@@ -437,98 +508,174 @@ elif app_mode == "Chat with AI":
 elif app_mode == "Settings":
     st.title("Settings")
     
-    # Ollama Settings Section
-    st.header("Ollama AI Settings")
+    # Tabs for different settings categories
+    settings_tab1, settings_tab2 = st.tabs(["Ollama AI Settings", "Thumbnail Settings"])
     
-    # Connection Status
-    connection_status = ollama_client.check_connection()
-    if connection_status:
-        st.success("✅ Connected to Ollama server")
-    else:
-        st.error("❌ Not connected to Ollama server. Please check that Ollama is running.")
-    
-    # Host settings
-    ollama_host = st.text_input("Ollama Host URL", value=st.session_state.ollama_host)
-    
-    # Model selection
-    st.subheader("AI Model Selection")
-    
-    # Get available models
-    available_models = []
-    model_details = {}
-    
-    if connection_status:
-        with st.spinner("Loading available models..."):
-            available_models = ollama_client.list_models()
-            
-            if available_models:
-                st.success(f"Found {len(available_models)} available models")
-                # Create a dictionary of model names for the selectbox
-                model_options = [model.get("name", "unknown") for model in available_models]
+    # Ollama Settings Tab
+    with settings_tab1:
+        st.header("Ollama AI Settings")
+        
+        # Connection Status
+        connection_status = ollama_client.check_connection()
+        if connection_status:
+            st.success("✅ Connected to Ollama server")
+        else:
+            st.error("❌ Not connected to Ollama server. Please check that Ollama is running.")
+        
+        # Host settings
+        ollama_host = st.text_input("Ollama Host URL", value=st.session_state.ollama_host)
+        
+        # Model selection
+        st.subheader("AI Model Selection")
+        
+        # Get available models
+        available_models = []
+        model_details = {}
+        
+        if connection_status:
+            with st.spinner("Loading available models..."):
+                available_models = ollama_client.list_models()
                 
-                # Get the current index if the current model is in the list
-                current_index = 0
-                if st.session_state.ollama_model in model_options:
-                    current_index = model_options.index(st.session_state.ollama_model)
-                
-                # Model selection dropdown
-                selected_model = st.selectbox(
-                    "Select AI Model", 
-                    options=model_options,
-                    index=current_index
-                )
-                
-                # Get and display model details
-                if st.button("Show Model Details"):
-                    with st.spinner(f"Loading details for {selected_model}..."):
-                        model_details = ollama_client.get_model_details(selected_model)
-                        if model_details:
-                            st.subheader(f"{selected_model} Details")
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.write(f"**Model:** {model_details.get('model', 'unknown')}")
-                                st.write(f"**Size:** {model_details.get('size', 'unknown')}")
-                            with col2:
-                                st.write(f"**Modified:** {model_details.get('modified_at', 'unknown')}")
-                                st.write(f"**Format:** {model_details.get('format', 'unknown')}")
-                        else:
-                            st.warning(f"Could not retrieve details for {selected_model}")
-                
-                # Save button for settings
-                if st.button("Save Settings"):
-                    # Update the ollama client and session state
-                    update_success = ollama_client.update_settings(
-                        host=ollama_host,
-                        model=selected_model
+                if available_models:
+                    st.success(f"Found {len(available_models)} available models")
+                    # Create a dictionary of model names for the selectbox
+                    model_options = [model.get("name", "unknown") for model in available_models]
+                    
+                    # Get the current index if the current model is in the list
+                    current_index = 0
+                    if st.session_state.ollama_model in model_options:
+                        current_index = model_options.index(st.session_state.ollama_model)
+                    
+                    # Model selection dropdown
+                    selected_model = st.selectbox(
+                        "Select AI Model", 
+                        options=model_options,
+                        index=current_index
                     )
                     
-                    if update_success:
-                        st.session_state.ollama_host = ollama_host
-                        st.session_state.ollama_model = selected_model
-                        st.success("Settings saved successfully!")
-                    else:
-                        st.error("Could not connect to the specified Ollama host. Settings not saved.")
-            else:
-                st.warning("No models found. Make sure Ollama is running and you have models installed.")
-                st.info("You can install models with the Ollama CLI: `ollama pull llama2`")
-    else:
-        st.info("Connect to Ollama server to view available models.")
-        # Save button for just the host
-        if st.button("Save Host Settings"):
-            # Try connecting to the new host
-            old_host = ollama_client.host
-            ollama_client.host = ollama_host
-            ollama_client.api_endpoint = f"{ollama_host}/api"
+                    # Get and display model details
+                    if st.button("Show Model Details"):
+                        with st.spinner(f"Loading details for {selected_model}..."):
+                            model_details = ollama_client.get_model_details(selected_model)
+                            if model_details:
+                                st.subheader(f"{selected_model} Details")
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write(f"**Model:** {model_details.get('model', 'unknown')}")
+                                    st.write(f"**Size:** {model_details.get('size', 'unknown')}")
+                                with col2:
+                                    st.write(f"**Modified:** {model_details.get('modified_at', 'unknown')}")
+                                    st.write(f"**Format:** {model_details.get('format', 'unknown')}")
+                            else:
+                                st.warning(f"Could not retrieve details for {selected_model}")
+                    
+                    # Save button for settings
+                    if st.button("Save Ollama Settings"):
+                        # Update the ollama client and session state
+                        update_success = ollama_client.update_settings(
+                            host=ollama_host,
+                            model=selected_model
+                        )
+                        
+                        if update_success:
+                            st.session_state.ollama_host = ollama_host
+                            st.session_state.ollama_model = selected_model
+                            st.success("Ollama settings saved successfully!")
+                        else:
+                            st.error("Could not connect to the specified Ollama host. Settings not saved.")
+                else:
+                    st.warning("No models found. Make sure Ollama is running and you have models installed.")
+                    st.info("You can install models with the Ollama CLI: `ollama pull llama2`")
+        else:
+            st.info("Connect to Ollama server to view available models.")
+            # Save button for just the host
+            if st.button("Save Host Settings"):
+                # Try connecting to the new host
+                old_host = ollama_client.host
+                ollama_client.host = ollama_host
+                ollama_client.api_endpoint = f"{ollama_host}/api"
+                
+                if ollama_client.check_connection():
+                    st.session_state.ollama_host = ollama_host
+                    st.success("Host settings saved successfully!")
+                    st.rerun()  # Refresh to show models
+                else:
+                    # Revert to the old host
+                    ollama_client.host = old_host
+                    ollama_client.api_endpoint = f"{old_host}/api"
+                    st.error("Could not connect to the specified Ollama host. Settings not saved.")
+    
+    # Thumbnail Settings Tab
+    with settings_tab2:
+        st.header("Document Thumbnail Settings")
+        
+        st.write("Customize how document thumbnails appear in your library")
+        
+        # Create a placeholder for the preview
+        preview_container = st.container(height=350)
+        
+        # Settings columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Thumbnail size settings
+            st.subheader("Thumbnail Size")
+            width = st.slider("Width (px)", 100, 300, st.session_state.thumbnail_size[0])
+            height = st.slider("Height (px)", 150, 400, st.session_state.thumbnail_size[1])
             
-            if ollama_client.check_connection():
-                st.session_state.ollama_host = ollama_host
-                st.success("Host settings saved successfully!")
-                st.rerun()  # Refresh to show models
-            else:
-                # Revert to the old host
-                ollama_client.host = old_host
-                ollama_client.api_endpoint = f"{old_host}/api"
-                st.error("Could not connect to the specified Ollama host. Settings not saved.")
+        with col2:
+            # Thumbnail color settings
+            st.subheader("Thumbnail Colors")
+            
+            # Background color picker
+            bg_color_picker = st.color_picker(
+                "Background Color", 
+                f"rgb({st.session_state.thumbnail_bg_color[0]}, {st.session_state.thumbnail_bg_color[1]}, {st.session_state.thumbnail_bg_color[2]})"
+            )
+            
+            # Extract RGB values from the color picker
+            bg_color = bg_color_picker.strip("rgb()").split(",")
+            bg_color = [int(c.strip()) for c in bg_color]
+            
+            # Text color picker
+            text_color_picker = st.color_picker(
+                "Text Color", 
+                f"rgb({st.session_state.thumbnail_text_color[0]}, {st.session_state.thumbnail_text_color[1]}, {st.session_state.thumbnail_text_color[2]})"
+            )
+            
+            # Extract RGB values from the color picker
+            text_color = text_color_picker.strip("rgb()").split(",")
+            text_color = [int(c.strip()) for c in text_color]
+        
+        # Generate a live preview
+        with preview_container:
+            st.subheader("Preview")
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                # Generate a placeholder with current settings
+                preview = generate_placeholder_thumbnail(
+                    "Sample Book Title",
+                    size=(width, height),
+                    bg_color=tuple(bg_color),
+                    text_color=tuple(text_color)
+                )
+                st.image(preview, caption="Thumbnail Preview", use_column_width=True)
+        
+        # Save button
+        if st.button("Save Thumbnail Settings"):
+            # Update session state
+            st.session_state.thumbnail_size = (width, height)
+            st.session_state.thumbnail_bg_color = tuple(bg_color)
+            st.session_state.thumbnail_text_color = tuple(text_color)
+            
+            # Clear thumbnail caches to regenerate with new settings
+            if 'thumbnail_cache' in st.session_state:
+                st.session_state.thumbnail_cache = {}
+            if 'kb_thumbnail_cache' in st.session_state:
+                st.session_state.kb_thumbnail_cache = {}
+                
+            st.success("Thumbnail settings saved successfully!")
+            st.info("Thumbnails will be regenerated with your new settings.")
 
 # Footer
 st.sidebar.markdown("---")
