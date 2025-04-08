@@ -44,3 +44,11 @@ pandas
 plotly
 scikit-learn
 streamlit
+chromadb
+langchain
+langchain-community
+langchain-text-splitters
+pdf2image
+pypdf2
+pytesseract
+wordcloud

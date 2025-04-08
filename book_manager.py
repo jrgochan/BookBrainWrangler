@@ -25,7 +25,7 @@ class BookManager:
             title TEXT NOT NULL,
             author TEXT NOT NULL,
             file_path TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            date_added TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         ''')
         
@@ -243,7 +243,7 @@ class BookManager:
             # Get book
             cursor.execute(
                 """
-                SELECT books.id, books.title, books.author, books.file_path, books.created_at
+                SELECT books.id, books.title, books.author, books.file_path, books.date_added
                 FROM books
                 WHERE books.id = ?
                 """,
@@ -317,7 +317,7 @@ class BookManager:
             # Get all books
             cursor.execute(
                 """
-                SELECT books.id, books.title, books.author, books.file_path, books.created_at
+                SELECT books.id, books.title, books.author, books.file_path, books.date_added
                 FROM books
                 ORDER BY books.title
                 """
@@ -366,7 +366,7 @@ class BookManager:
         try:
             # Base query
             base_query = """
-            SELECT DISTINCT books.id, books.title, books.author, books.file_path, books.created_at
+            SELECT DISTINCT books.id, books.title, books.author, books.file_path, books.date_added
             FROM books
             """
             
