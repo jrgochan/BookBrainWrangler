@@ -1,0 +1,23 @@
+# Core requirements
+chromadb>=1.0.3
+langchain>=0.3.23
+langchain-community>=0.3.21
+langchain-text-splitters>=0.3.8
+pdf2image>=1.17.0
+pypdf2>=3.0.1
+pytesseract>=0.3.13
+requests>=2.32.3
+streamlit>=1.44.1
+
+# Additional dependencies from your project
+attr>=0.3.2
+ConfigParser>=7.2.0
+contextlib2>=21.6.0
+cryptography>=44.0.2
+docutils>=0.21.2
+filelock>=3.18.0
+importlib_metadata>=8.6.1
+ipython>=8.12.3
+ipywidgets>=8.1.5
+Jinja2>=3.1.6
+# Note: jnius is optional and installed separately
