@@ -49,34 +49,27 @@ def render_ai_settings(ollama_client):
     current_model = st.session_state.ollama_settings['model']
     
     # Connection status
-    connection_status = ollama_client.check_connection()
+    connection_status = ollama_client.is_server_running()
     
     if connection_status:
         st.success(f"✓ Connected to Ollama server at {current_host}")
         
         # Display available models
-        available_models = ollama_client.list_models()
-        if available_models:
-            model_names = [m['name'] for m in available_models]
-            
-            # Create a clickable list of models with their sizes
+        model_names = ollama_client.get_available_models()
+        if model_names:
+            # Create a clickable list of models
             st.subheader("Available Models")
             
-            for model in available_models:
-                name = model['name']
-                size_gb = round(model.get('size', 0) / (1024**3), 1)
-                
-                col1, col2, col3 = st.columns([3, 1, 1])
+            for name in model_names:
+                col1, col2 = st.columns([4, 1])
                 with col1:
                     st.write(f"**{name}**")
                 with col2:
-                    st.write(f"{size_gb} GB")
-                with col3:
                     if name == current_model:
                         st.success("Active")
                     else:
                         if st.button(f"Select", key=f"select_{name}"):
-                            st.session_state.ollama_model = name
+                            st.session_state.ollama_settings['model'] = name
                             st.success(f"Model changed to {name}")
                             st.rerun()
         else:
@@ -103,9 +96,16 @@ def render_ai_settings(ollama_client):
         if submit_button:
             if new_host != current_host or new_model != current_model:
                 # Update settings
-                if ollama_client.update_settings(host=new_host, model=new_model):
-                    st.session_state.ollama_host = new_host
-                    st.session_state.ollama_model = new_model
+                # Update client configuration
+                ollama_client.server_url = new_host
+                ollama_client.model = new_model
+                ollama_client.api_base = f"{new_host}/api"
+                
+                # Test connection
+                if ollama_client.is_server_running():
+                    # Update session state
+                    st.session_state.ollama_settings['server_url'] = new_host
+                    st.session_state.ollama_settings['model'] = new_model
                     st.success("Settings updated successfully!")
                     st.rerun()
                 else:
