@@ -44,27 +44,46 @@ def render_chat_with_ai_page(ollama_client, knowledge_base):
     # Display available models
     st.sidebar.header("AI Configuration")
     
-    # Check loaded model - initialize settings if needed
-    if 'ollama_settings' not in st.session_state:
-        st.session_state.ollama_settings = {
-            'model': 'llama2',  # Default model
-            'server_url': 'http://localhost:11434',
-            'temperature': 0.7,
-            'context_window': 4096,
-        }
-    current_model = st.session_state.ollama_settings['model']
-    model_info = ollama_client.get_model_details(current_model)
-    
-    if model_info:
-        st.sidebar.success(f"✓ Using model: **{current_model}**")
-        if "parameters" in model_info:
-            st.sidebar.caption(f"Model size: {model_info['parameters']/1_000_000_000:.1f}B parameters")
-    else:
-        st.sidebar.warning(f"⚠️ Model '{current_model}' not found on the server")
-        available_models = ollama_client.list_models()
-        if available_models:
-            model_names = [m['name'] for m in available_models]
-            st.sidebar.caption(f"Available models: {', '.join(model_names)}")
+    # Safely initialize settings if needed
+    try:
+        if 'ollama_settings' not in st.session_state:
+            st.session_state.ollama_settings = {
+                'model': 'llama2',  # Default model
+                'server_url': 'http://localhost:11434',
+                'temperature': 0.7,
+                'context_window': 4096,
+            }
+        
+        # Safely access the model name using get() with a default
+        if isinstance(st.session_state.ollama_settings, dict):
+            current_model = st.session_state.ollama_settings.get('model', 'llama2')
+        else:
+            # If settings structure is unexpected, use default
+            current_model = 'llama2'
+            
+        # Get model details
+        model_info = ollama_client.get_model_details(current_model)
+        
+        if model_info:
+            st.sidebar.success(f"✓ Using model: **{current_model}**")
+            if isinstance(model_info, dict) and "parameters" in model_info:
+                st.sidebar.caption(f"Model size: {model_info['parameters']/1_000_000_000:.1f}B parameters")
+        else:
+            st.sidebar.warning(f"⚠️ Model '{current_model}' not found on the server")
+            available_models = ollama_client.list_models()
+            if available_models:
+                # Extract model names safely
+                try:
+                    model_names = [m.get('name', 'unknown') if isinstance(m, dict) else 'unknown' 
+                                  for m in available_models]
+                    st.sidebar.caption(f"Available models: {', '.join(model_names)}")
+                except Exception:
+                    st.sidebar.caption("Error retrieving model information")
+    except Exception as e:
+        # Handle any unexpected errors in the model display section
+        st.sidebar.error(f"Error displaying model information: {str(e)}")
+        # Ensure we have a valid model name for later use
+        current_model = 'llama2'
     
     # Get indexed books
     indexed_book_ids = knowledge_base.get_indexed_book_ids()
@@ -123,8 +142,14 @@ def render_chat_with_ai_page(ollama_client, knowledge_base):
             
             # Generate AI response
             try:
-                # Ensure we're using the correct model
-                model_to_use = st.session_state.ollama_settings.get('model', 'llama2')
+                # Ensure we're using the correct model with safe access
+                # Use dictionary access with get() to provide a default value
+                if isinstance(st.session_state.ollama_settings, dict):
+                    model_to_use = st.session_state.ollama_settings.get('model', 'llama2')
+                else:
+                    # If settings aren't a dictionary, use default
+                    model_to_use = 'llama2'
+                    
                 ai_response = ollama_client.generate_response(
                     prompt=user_query,
                     context=context,
