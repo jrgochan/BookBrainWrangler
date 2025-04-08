@@ -18,6 +18,9 @@ from PIL import Image
 class DocumentProcessor:
     def __init__(self):
         """Initialize the document processor with default settings."""
+        # Set the path to the Tesseract executable
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        
         self.metadata_patterns = {
             'title': [
                 r'title:\s*([^\n]+)',
