@@ -132,15 +132,29 @@ if app_mode == "Book Management":
                     update_progress(0, 1, f"PDF has {page_count} pages to process")
                 
                 # Process the file with progress updates
-                update_progress(0, 1, "Starting text extraction...")
-                extracted_text = document_processor.extract_text(temp_path, progress_callback=update_progress)
+                update_progress(0, 1, "Starting content extraction...")
+                extracted_content = document_processor.extract_content(
+                    temp_path, 
+                    include_images=True, 
+                    progress_callback=update_progress
+                )
                 
                 # Update progress for text cleanup
                 update_progress(0, 1, "Cleaning up extracted text...")
                 progress_bar.progress(0.9)  # 90% complete
                 
                 # Clean up the extracted text
-                cleaned_text = cleanup_text(extracted_text)
+                if isinstance(extracted_content, dict):
+                    # New format with text and images
+                    cleaned_text = cleanup_text(extracted_content['text'])
+                    extracted_content['text'] = cleaned_text
+                    image_count = len(extracted_content.get('images', []))
+                    
+                    update_progress(0, 1, f"Processed {len(cleaned_text)} characters of text and {image_count} images")
+                else:
+                    # Legacy format (text only)
+                    cleaned_text = cleanup_text(extracted_content)
+                    extracted_content = {'text': cleaned_text, 'images': []}
                 
                 # Update progress for database addition
                 update_progress(0, 1, "Adding book to database...")
@@ -153,7 +167,7 @@ if app_mode == "Book Management":
                     author=book_author,
                     categories=categories,
                     file_path=temp_path,
-                    content=cleaned_text
+                    content=extracted_content['text']  # Store just the text in the books table
                 )
                 
                 # Complete the progress
@@ -341,8 +355,46 @@ elif app_mode == "Knowledge Base":
                         last_update_container.info("\n".join(st.session_state.kb_status_updates))
                 
                     try:
-                        # Get book content
-                        book_content = book_manager.get_book_content(book_id)
+                        # Get book content text
+                        book_text = book_manager.get_book_content(book_id)
+                        
+                        # Get book file path for image extraction if needed
+                        book_details = book_manager.get_book(book_id)
+                        file_path = book_details.get('file_path') if book_details else None
+                        
+                        # If adding to knowledge base and file exists, extract images too
+                        if not is_in_kb and file_path and os.path.exists(file_path):
+                            update_progress(0, 1, "Processing complete book content including images...")
+                            
+                            # Extract both text and images from the book file
+                            try:
+                                extracted_content = document_processor.extract_content(
+                                    file_path, 
+                                    include_images=True, 
+                                    progress_callback=update_progress
+                                )
+                                
+                                if isinstance(extracted_content, dict):
+                                    # If we got a dict back, it's the new format with images
+                                    # We'll use our existing clean text but add the images
+                                    book_content = {
+                                        'text': book_text,
+                                        'images': extracted_content.get('images', [])
+                                    }
+                                    
+                                    img_count = len(book_content['images'])
+                                    update_progress(0.5, 1, f"Adding book with {img_count} images to knowledge base...")
+                                else:
+                                    # Fallback to text-only if we got just a string
+                                    book_content = book_text
+                            except Exception as e:
+                                # If image extraction fails, fall back to text only
+                                print(f"Warning: Image extraction failed, using text only: {e}")
+                                update_progress(0.5, 1, "Image extraction failed, using text only")
+                                book_content = book_text
+                        else:
+                            # If removing or file not available, just use the text
+                            book_content = book_text
                         
                         # Toggle the book with progress tracking
                         knowledge_base.toggle_book_in_knowledge_base(

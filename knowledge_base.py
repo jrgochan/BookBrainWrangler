@@ -5,6 +5,7 @@ import uuid
 import shutil
 import tempfile
 import importlib.util
+import base64
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import FakeEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -166,7 +167,7 @@ class KnowledgeBase:
         
         Args:
             book_id: The ID of the book
-            book_content: The text content of the book
+            book_content: The book content - can be a string (text only) or a dictionary with 'text' and 'images' keys
             add_to_kb: If True, add to KB; if False, remove from KB
             progress_callback: Optional callback function for progress updates
         """
@@ -190,8 +191,24 @@ class KnowledgeBase:
                 if progress_callback:
                     progress_callback(1, 3, "Processing book content...")
                 
-                # Process and add the book to the vector store
-                self._add_to_vector_store(book_id, book_content)
+                # Check the format of book_content to handle both string and dictionary formats
+                if isinstance(book_content, dict):
+                    # Dictionary format with separate text and images
+                    text_content = book_content.get('text', '')
+                    image_content = book_content.get('images', [])
+                    
+                    # Process and add the book text to the vector store
+                    self._add_to_vector_store(book_id, text_content)
+                    
+                    # Process and add image content if available
+                    if image_content and len(image_content) > 0:
+                        if progress_callback:
+                            progress_callback(1.5, 3, f"Processing {len(image_content)} images...")
+                        
+                        self._add_images_to_vector_store(book_id, image_content)
+                else:
+                    # Legacy format: book_content is just a text string
+                    self._add_to_vector_store(book_id, book_content)
                 
                 if progress_callback:
                     progress_callback(2, 3, "Updating database...")
@@ -241,7 +258,7 @@ class KnowledgeBase:
     
     def _add_to_vector_store(self, book_id, content):
         """
-        Add a book's content to the vector store.
+        Add a book's text content to the vector store.
         
         Args:
             book_id: The ID of the book
@@ -254,7 +271,7 @@ class KnowledgeBase:
         texts_with_metadata = [
             {
                 "text": chunk,
-                "metadata": {"book_id": book_id}
+                "metadata": {"book_id": book_id, "content_type": "text"}
             }
             for chunk in chunks
         ]
@@ -265,6 +282,45 @@ class KnowledgeBase:
         
         self.vector_store.add_texts(texts=texts, metadatas=metadatas)
         self.vector_store.persist()
+    
+    def _add_images_to_vector_store(self, book_id, images):
+        """
+        Add a book's image content to the vector store.
+        Each image is processed and added as a separate document with text description.
+        
+        Args:
+            book_id: The ID of the book
+            images: List of image dictionaries with 'page', 'index', 'description', and 'data' keys
+        """
+        if not images:
+            return
+        
+        # Process each image and add it to the vector store
+        texts = []
+        metadatas = []
+        
+        for img in images:
+            # Create a text description of the image that includes reference to the image data
+            img_description = f"Image from page {img.get('page', 'unknown')}: {img.get('description', 'No description')}"
+            
+            # Add the image description as a text document
+            texts.append(img_description)
+            
+            # Add metadata including reference to the base64 data (truncated to avoid overly large metadata)
+            # Note: We're not storing the full base64 data in the vector store, just a reference
+            # that this is an image with a description
+            metadatas.append({
+                "book_id": book_id,
+                "content_type": "image",
+                "page": img.get('page', 0),
+                "image_index": img.get('index', 0),
+                "has_image_data": True
+            })
+        
+        # Add documents to vector store
+        if texts:
+            self.vector_store.add_texts(texts=texts, metadatas=metadatas)
+            self.vector_store.persist()
     
     def _remove_from_vector_store(self, book_id):
         """

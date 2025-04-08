@@ -24,3 +24,4 @@ Jinja2>=3.1.6
 python-docx
 docx
 langchain-chroma
+sentence-transformers
