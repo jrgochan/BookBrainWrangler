@@ -116,7 +116,7 @@ def render_upload_section(book_manager, document_processor):
                             ocr_image_container.image(
                                 f"data:image/jpeg;base64,{message['current_image']}", 
                                 caption=f"Page {page_num}/{total}", 
-                                use_column_width=True
+                                use_container_width=True
                             )
                     
                     # Display extracted text if available

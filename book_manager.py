@@ -79,9 +79,9 @@ class BookManager:
         cursor = conn.cursor()
         
         try:
-            # Insert book
+            # Insert book with current timestamp for date_added
             cursor.execute(
-                "INSERT INTO books (title, author, file_path) VALUES (?, ?, ?)",
+                "INSERT INTO books (title, author, file_path, date_added) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
                 (title, author, file_path)
             )
             book_id = cursor.lastrowid

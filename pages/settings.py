@@ -144,7 +144,7 @@ def render_ocr_settings():
             "Update display every N pages",
             min_value=1,
             max_value=10,
-            value=current_settings['display_interval'],
+            value=int(current_settings['display_interval']),
             step=1,
             help="Higher values may improve processing speed by reducing UI updates"
         )
@@ -153,7 +153,7 @@ def render_ocr_settings():
             "OCR confidence threshold (%)",
             min_value=0,
             max_value=100,
-            value=current_settings['confidence_threshold'],
+            value=int(current_settings['confidence_threshold']),
             step=1,
             help="Pages with OCR confidence below this threshold will be flagged as low quality"
         )
