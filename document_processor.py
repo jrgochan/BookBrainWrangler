@@ -9,6 +9,11 @@ import base64
 import json
 import time
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
+import PyPDF2
+import pytesseract
+from pdf2image import convert_from_path
+import docx
+from PIL import Image
 
 class DocumentProcessor:
     def __init__(self):
@@ -90,6 +95,8 @@ class DocumentProcessor:
                 'images': List of image descriptions with embedded base64 data (if include_images=True)
             }
         """
+        # We're using global imports now
+        
         # Define a helper function for sending progress updates
         def send_progress(current, total, message):
             if progress_callback:
@@ -106,51 +113,101 @@ class DocumentProcessor:
             'images': []
         }
         
-        # For demonstration, we'll return a placeholder that simulates processing
         send_progress(0, total_pages, "Starting document processing...")
         
-        # Simulate processing for each page
-        for i in range(total_pages):
-            # Simulate processing delay
-            time.sleep(0.1)
+        # Open the PDF file
+        with open(pdf_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
             
-            # Update progress
-            progress_text = f"Processing page {i+1}/{total_pages}"
-            send_progress(i, total_pages, {'text': progress_text, 'action': 'processing'})
-            
-            # Add placeholder text for this page
-            result['text'] += f"This is placeholder text for page {i+1}.\n\n"
-            
-            # Simulate OCR recognition with confidence
-            if i % 3 == 0:  # Every third page has lower confidence to show the feature
-                confidence = 65.0
-            else:
-                confidence = 92.0
-            
-            # Send detailed progress with placeholder image data
-            if progress_callback:
-                # Create a simple SVG as a placeholder for the page image
-                svg_data = f'''
-                <svg width="600" height="800" xmlns="http://www.w3.org/2000/svg">
-                  <rect width="600" height="800" fill="#f5f5f5"/>
-                  <text x="300" y="400" font-family="Arial" font-size="24" text-anchor="middle">
-                    Page {i+1} of {total_pages}
-                  </text>
-                </svg>
-                '''
-                # Convert SVG to base64
-                svg_base64 = base64.b64encode(svg_data.encode('utf-8')).decode('utf-8')
+            # Process each page
+            for i in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[i]
+                progress_text = f"Processing page {i+1}/{total_pages}"
+                send_progress(i, total_pages, {'text': progress_text, 'action': 'processing'})
                 
-                # Send progress with image and text data
-                send_progress(i, total_pages, {
-                    'text': progress_text,
-                    'current_image': svg_base64,
-                    'ocr_text': f"Sample extracted text from page {i+1}",
-                    'confidence': confidence,
-                    'action': 'extracting'
-                })
+                # Try to extract text directly from PDF
+                extracted_text = page.extract_text()
+                
+                # If direct extraction didn't work well, use OCR
+                if not extracted_text or len(extracted_text.strip()) < 50:  # Heuristic to determine if text extraction failed
+                    try:
+                        # Convert PDF page to image
+                        images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1)
+                        if images:
+                            # Use OCR to extract text from the image
+                            img = images[0]
+                            extracted_text = pytesseract.image_to_string(img)
+                            confidence = float(pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)['conf'][0])
+                            
+                            # Save image for UI feedback
+                            if include_images or progress_callback:
+                                # Convert image to base64 for display
+                                img_byte_arr = io.BytesIO()
+                                img.save(img_byte_arr, format='PNG')
+                                img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+                                
+                                if include_images:
+                                    # Add image to result
+                                    result['images'].append({
+                                        'page': i+1,
+                                        'index': 0,  # First image on page
+                                        'description': f"Image from page {i+1}",
+                                        'data': img_base64
+                                    })
+                                
+                                # Send progress with image and text data
+                                if progress_callback:
+                                    send_progress(i, total_pages, {
+                                        'text': progress_text,
+                                        'current_image': img_base64,
+                                        'ocr_text': extracted_text,
+                                        'confidence': confidence,
+                                        'action': 'extracting'
+                                    })
+                    except Exception as e:
+                        print(f"OCR processing error on page {i+1}: {str(e)}")
+                        # If OCR fails, use whatever text we could extract directly
+                        if progress_callback:
+                            send_progress(i, total_pages, {
+                                'text': f"Error processing page {i+1}: {str(e)}",
+                                'action': 'error'
+                            })
+                else:
+                    # Direct extraction worked, report good confidence
+                    confidence = 95.0  # High confidence for direct extraction
+                    
+                    # If we need to show progress with the page image
+                    if progress_callback:
+                        try:
+                            # Generate image from page for visualization
+                            images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1)
+                            if images:
+                                img = images[0]
+                                img_byte_arr = io.BytesIO()
+                                img.save(img_byte_arr, format='PNG')
+                                img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+                                
+                                send_progress(i, total_pages, {
+                                    'text': progress_text,
+                                    'current_image': img_base64,
+                                    'ocr_text': extracted_text,
+                                    'confidence': confidence,
+                                    'action': 'extracting'
+                                })
+                        except Exception as e:
+                            # If image conversion fails, just report the text
+                            print(f"Image conversion error on page {i+1}: {str(e)}")
+                            send_progress(i, total_pages, {
+                                'text': progress_text,
+                                'ocr_text': extracted_text,
+                                'confidence': confidence,
+                                'action': 'extracting'
+                            })
+                
+                # Add extracted text to result
+                result['text'] += extracted_text + "\n\n"
         
-        # Simulate finalizing
+        # Finalizing
         send_progress(total_pages-1, total_pages, {'text': "Finalizing document processing...", 'action': 'completed'})
         
         return result
@@ -171,20 +228,102 @@ class DocumentProcessor:
                 'images': List of image descriptions with embedded base64 data (if include_images=True)
             }
         """
-        # For demonstration, we'll return a placeholder that simulates processing
-        if progress_callback:
-            progress_callback(0, 1, "Starting DOCX processing...")
-            
-            # Simulate processing delay
-            time.sleep(0.5)
-            
-            progress_callback(1, 1, "DOCX processing complete")
+        # We're using global imports now
         
-        # Return placeholder content
-        return {
-            'text': 'This is placeholder text for a DOCX document.',
+        # Initialize result
+        result = {
+            'text': '',
             'images': []
         }
+        
+        # Define a helper function for sending progress updates
+        def send_progress(current, total, message):
+            if progress_callback:
+                progress_callback(current, total, message)
+        
+        try:
+            # Load the document
+            document = docx.Document(docx_path)
+            
+            # Count total paragraphs and tables for progress reporting
+            total_elements = len(document.paragraphs) + len(document.tables)
+            send_progress(0, total_elements, "Starting DOCX processing...")
+            
+            # Extract text from paragraphs
+            for i, paragraph in enumerate(document.paragraphs):
+                para_text = paragraph.text
+                result['text'] += para_text + "\n"
+                
+                # Report progress
+                progress_text = f"Processing paragraph {i+1}/{len(document.paragraphs)}"
+                send_progress(i, total_elements, {'text': progress_text, 'action': 'processing'})
+            
+            # Extract text from tables
+            for i, table in enumerate(document.tables):
+                table_text = ""
+                for row in table.rows:
+                    row_text = [cell.text for cell in row.cells]
+                    table_text += " | ".join(row_text) + "\n"
+                
+                result['text'] += table_text + "\n\n"
+                
+                # Report progress
+                progress_text = f"Processing table {i+1}/{len(document.tables)}"
+                send_progress(len(document.paragraphs) + i, total_elements, 
+                             {'text': progress_text, 'action': 'processing'})
+            
+            # Extract images if requested
+            if include_images:
+                # Get the relationship IDs for images
+                image_rels = []
+                for rel in document.part.rels.values():
+                    if "image" in rel.target_ref:
+                        image_rels.append(rel)
+                
+                # Process each image
+                for i, rel in enumerate(image_rels):
+                    try:
+                        # Get image data
+                        image_data = rel.target_part.blob
+                        
+                        # Convert to base64 for storage/display
+                        img_base64 = base64.b64encode(image_data).decode('utf-8')
+                        
+                        # Add to result
+                        result['images'].append({
+                            'page': 1,  # DOCX doesn't have pages like PDF
+                            'index': i,
+                            'description': f"Image {i+1} from document",
+                            'data': img_base64
+                        })
+                        
+                        # For UI display, create an image
+                        if progress_callback:
+                            # Load image for UI display
+                            img = Image.open(io.BytesIO(image_data))
+                            
+                            # Report progress with image
+                            progress_text = f"Processing image {i+1}/{len(image_rels)}"
+                            send_progress(total_elements - len(image_rels) + i, total_elements, {
+                                'text': progress_text,
+                                'current_image': img_base64,
+                                'ocr_text': f"Image {i+1} from document",
+                                'confidence': 100.0,  # Full confidence for embedded images
+                                'action': 'extracting'
+                            })
+                    except Exception as e:
+                        print(f"Error processing image {i+1}: {str(e)}")
+            
+            # Final progress update
+            send_progress(total_elements, total_elements, {'text': "DOCX processing complete", 'action': 'completed'})
+            
+        except Exception as e:
+            error_msg = f"Error processing DOCX file: {str(e)}"
+            print(error_msg)
+            if progress_callback:
+                send_progress(0, 1, {'text': error_msg, 'action': 'error'})
+        
+        return result
     
     def extract_metadata(self, file_path, content=None):
         """
@@ -283,6 +422,12 @@ class DocumentProcessor:
         Returns:
             Number of pages as an integer
         """
-        # For demonstration purposes, return a random number between 5 and 20
-        import random
-        return random.randint(5, 20)
+        # Use PyPDF2 to get the real page count
+        try:
+            # We're using global imports now
+            with open(pdf_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                return len(pdf_reader.pages)
+        except Exception as e:
+            print(f"Error getting page count: {str(e)}")
+            return 0

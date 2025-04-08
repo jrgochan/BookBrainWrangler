@@ -52,3 +52,16 @@ pdf2image
 pypdf2
 pytesseract
 wordcloud
+python-docx
+matplotlib
+nltk
+numpy
+pandas
+pdf2image
+plotly
+pypdf2
+pytesseract
+python-docx
+scikit-learn
+streamlit
+wordcloud
