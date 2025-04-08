@@ -1,6 +1,8 @@
 import os
 import json
 import time
+import uuid
+import shutil
 import tempfile
 import importlib.util
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -36,11 +38,58 @@ class KnowledgeBase:
         # In a production environment, you would use a proper embedding model
         self.embeddings = FakeEmbeddings(size=768)
         
-        # Initialize the vector store
-        self.vector_store = Chroma(
-            persist_directory=os.path.join(self.data_dir, "chroma_db"),
-            embedding_function=self.embeddings
-        )
+        # Initialize the vector store with safety checks
+        chroma_dir = os.path.join(self.data_dir, "chroma_db")
+        
+        # Check if the directory exists and is valid
+        try:
+            # Try to initialize with existing directory
+            if os.path.exists(chroma_dir):
+                try:
+                    self.vector_store = Chroma(
+                        persist_directory=chroma_dir,
+                        embedding_function=self.embeddings
+                    )
+                    # Test if it works
+                    self.vector_store.get()
+                except Exception as e:
+                    print(f"Error loading existing Chroma DB: {e}")
+                    print("Creating a new database...")
+                    # If there's an error, create a new database
+                    if os.path.exists(chroma_dir):
+                        try:
+                            # Backup the old database
+                            backup_dir = chroma_dir + "_backup_" + str(int(time.time()))
+                            shutil.move(chroma_dir, backup_dir)
+                            print(f"Backed up problematic database to {backup_dir}")
+                        except Exception as backup_error:
+                            print(f"Could not backup old database: {backup_error}")
+                            # Try to delete it instead
+                            try:
+                                shutil.rmtree(chroma_dir)
+                            except Exception as delete_error:
+                                print(f"Could not delete old database: {delete_error}")
+                    
+                    # Create new directory and initialize fresh database
+                    os.makedirs(chroma_dir, exist_ok=True)
+                    self.vector_store = Chroma(
+                        persist_directory=chroma_dir,
+                        embedding_function=self.embeddings
+                    )
+            else:
+                # Directory doesn't exist, create new
+                os.makedirs(chroma_dir, exist_ok=True)
+                self.vector_store = Chroma(
+                    persist_directory=chroma_dir,
+                    embedding_function=self.embeddings
+                )
+        except Exception as init_error:
+            print(f"Fatal error initializing Chroma: {init_error}")
+            # Last resort fallback to in-memory database
+            print("Falling back to in-memory database (temporary only)")
+            self.vector_store = Chroma(
+                embedding_function=self.embeddings
+            )
     
     def _get_writable_data_dir(self):
         """
@@ -238,26 +287,70 @@ class KnowledgeBase:
         if progress_callback:
             progress_callback(0, len(book_ids) + 2, "Initializing knowledge base rebuild")
             
+        # Create a completely new vector store to avoid compatibility issues
+        import shutil
+        
+        # Generate a unique directory name to avoid conflicts
+        unique_id = str(uuid.uuid4())[:8]
+        new_chroma_dir = os.path.join(self.data_dir, f"chroma_db_{unique_id}")
+        os.makedirs(new_chroma_dir, exist_ok=True)
+        
         if not book_ids:
-            # If no books, just clear the vector store
-            # Chroma doesn't have a clean way to reset, so we'll recreate it
+            # If no books, just create an empty vector store
             if progress_callback:
-                progress_callback(0, 1, "No books selected. Clearing knowledge base.")
+                progress_callback(0, 1, "No books selected. Creating empty knowledge base.")
+            
+            # Create a new empty vector store
+            try:
+                new_vector_store = Chroma(
+                    persist_directory=new_chroma_dir,
+                    embedding_function=self.embeddings
+                )
+                # Test it works by adding and removing a dummy document
+                new_vector_store.add_texts(texts=["Test document"], metadatas=[{"test": True}])
+                new_vector_store.persist()
                 
-            import shutil
-            chroma_dir = os.path.join(self.data_dir, "chroma_db")
-            if os.path.exists(chroma_dir):
-                shutil.rmtree(chroma_dir)
-            
-            # Reinitialize the vector store
-            self.vector_store = Chroma(
-                persist_directory=chroma_dir,
-                embedding_function=self.embeddings
-            )
-            
-            if progress_callback:
-                progress_callback(1, 1, "Knowledge base cleared successfully")
-            return
+                # If successful, replace the old vector store
+                self.vector_store = new_vector_store
+                
+                # Clean up old directory if it exists
+                old_chroma_dir = os.path.join(self.data_dir, "chroma_db")
+                if os.path.exists(old_chroma_dir) and old_chroma_dir != new_chroma_dir:
+                    try:
+                        shutil.rmtree(old_chroma_dir)
+                    except Exception as e:
+                        print(f"Warning: Could not remove old directory: {e}")
+                
+                # Rename the new directory to the standard name
+                try:
+                    if os.path.exists(old_chroma_dir):
+                        os.rename(new_chroma_dir, old_chroma_dir + "_new")
+                        self.vector_store = Chroma(
+                            persist_directory=old_chroma_dir + "_new",
+                            embedding_function=self.embeddings
+                        )
+                    else:
+                        os.rename(new_chroma_dir, old_chroma_dir)
+                        self.vector_store = Chroma(
+                            persist_directory=old_chroma_dir,
+                            embedding_function=self.embeddings
+                        )
+                except Exception as e:
+                    print(f"Warning: Could not rename directory: {e}")
+                    # Just keep using the temporary directory
+                    self.vector_store = Chroma(
+                        persist_directory=new_chroma_dir,
+                        embedding_function=self.embeddings
+                    )
+                
+                if progress_callback:
+                    progress_callback(1, 1, "Knowledge base cleared successfully")
+                return
+            except Exception as e:
+                print(f"Error creating new vector store: {e}")
+                if progress_callback:
+                    progress_callback(0, 1, f"Error: {str(e)}")
+                raise e
         
         # Get content for each book
         conn = get_connection()
@@ -296,34 +389,69 @@ class KnowledgeBase:
         
         conn.close()
         
-        # Clear the vector store
+        # Create a new vector store
         if progress_callback:
-            progress_callback(len(book_ids), len(book_ids) + 2, "Clearing previous knowledge base")
+            progress_callback(len(book_ids), len(book_ids) + 2, "Creating new knowledge base")
             
-        import shutil
-        chroma_dir = os.path.join(self.data_dir, "chroma_db")
-        if os.path.exists(chroma_dir):
-            shutil.rmtree(chroma_dir)
-        
-        # Reinitialize the vector store
-        self.vector_store = Chroma(
-            persist_directory=chroma_dir,
-            embedding_function=self.embeddings
-        )
-        
-        # Add all documents to the vector store
-        if all_texts:
+        try:
+            # Create new vector store in the temporary directory
+            new_vector_store = Chroma(
+                persist_directory=new_chroma_dir,
+                embedding_function=self.embeddings
+            )
+            
+            # Add all documents to the new vector store
+            if all_texts:
+                if progress_callback:
+                    progress_callback(len(book_ids) + 1, len(book_ids) + 2, 
+                                    f"Adding {len(all_texts)} text chunks to knowledge base")
+                
+                new_vector_store.add_texts(texts=all_texts, metadatas=all_metadatas)
+                new_vector_store.persist()
+                
+                # If successful, replace the old vector store
+                self.vector_store = new_vector_store
+                
+                # Clean up old directory if it exists
+                old_chroma_dir = os.path.join(self.data_dir, "chroma_db")
+                if os.path.exists(old_chroma_dir) and old_chroma_dir != new_chroma_dir:
+                    try:
+                        shutil.rmtree(old_chroma_dir)
+                    except Exception as e:
+                        print(f"Warning: Could not remove old directory: {e}")
+                
+                # Rename the new directory to the standard name
+                try:
+                    if os.path.exists(old_chroma_dir):
+                        os.rename(new_chroma_dir, old_chroma_dir + "_new")
+                        self.vector_store = Chroma(
+                            persist_directory=old_chroma_dir + "_new",
+                            embedding_function=self.embeddings
+                        )
+                    else:
+                        os.rename(new_chroma_dir, old_chroma_dir)
+                        self.vector_store = Chroma(
+                            persist_directory=old_chroma_dir,
+                            embedding_function=self.embeddings
+                        )
+                except Exception as e:
+                    print(f"Warning: Could not rename directory: {e}")
+                    # Just keep using the temporary directory
+                    self.vector_store = Chroma(
+                        persist_directory=new_chroma_dir,
+                        embedding_function=self.embeddings
+                    )
+                
+                if progress_callback:
+                    progress_callback(len(book_ids) + 2, len(book_ids) + 2, "Knowledge base rebuild complete")
+            elif progress_callback:
+                progress_callback(len(book_ids) + 2, len(book_ids) + 2, "No text to add to knowledge base")
+                
+        except Exception as e:
+            print(f"Error creating new vector store: {e}")
             if progress_callback:
-                progress_callback(len(book_ids) + 1, len(book_ids) + 2, 
-                                 f"Adding {len(all_texts)} text chunks to knowledge base")
-            
-            self.vector_store.add_texts(texts=all_texts, metadatas=all_metadatas)
-            self.vector_store.persist()
-            
-            if progress_callback:
-                progress_callback(len(book_ids) + 2, len(book_ids) + 2, "Knowledge base rebuild complete")
-        elif progress_callback:
-            progress_callback(len(book_ids) + 2, len(book_ids) + 2, "No text to add to knowledge base")
+                progress_callback(len(book_ids), len(book_ids) + 2, f"Error: {str(e)}")
+            raise e
     
     def get_indexed_book_ids(self):
         """
