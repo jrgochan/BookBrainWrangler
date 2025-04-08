@@ -49,7 +49,7 @@ class KnowledgeBase:
         conn.commit()
         conn.close()
     
-    def toggle_book_in_knowledge_base(self, book_id, book_content, add_to_kb=True):
+    def toggle_book_in_knowledge_base(self, book_id, book_content, add_to_kb=True, progress_callback=None):
         """
         Add or remove a book from the knowledge base.
         
@@ -57,9 +57,14 @@ class KnowledgeBase:
             book_id: The ID of the book
             book_content: The text content of the book
             add_to_kb: If True, add to KB; if False, remove from KB
+            progress_callback: Optional callback function for progress updates
         """
         conn = get_connection()
         cursor = conn.cursor()
+        
+        if progress_callback:
+            action = "Adding to" if add_to_kb else "Removing from"
+            progress_callback(0, 3, f"{action} knowledge base...")
         
         try:
             if add_to_kb:
@@ -67,33 +72,58 @@ class KnowledgeBase:
                 cursor.execute('SELECT 1 FROM knowledge_base_books WHERE book_id = ?', (book_id,))
                 if cursor.fetchone():
                     # Book is already in KB, nothing to do
+                    if progress_callback:
+                        progress_callback(3, 3, "Book is already in knowledge base")
                     return
+                
+                if progress_callback:
+                    progress_callback(1, 3, "Processing book content...")
                 
                 # Process and add the book to the vector store
                 self._add_to_vector_store(book_id, book_content)
+                
+                if progress_callback:
+                    progress_callback(2, 3, "Updating database...")
                 
                 # Record the addition in the database
                 cursor.execute(
                     'INSERT INTO knowledge_base_books (book_id, added_at) VALUES (?, ?)',
                     (book_id, time.time())
                 )
+                
+                if progress_callback:
+                    progress_callback(3, 3, "Book successfully added to knowledge base")
+                
             else:
                 # Check if the book is in the knowledge base
                 cursor.execute('SELECT 1 FROM knowledge_base_books WHERE book_id = ?', (book_id,))
                 if not cursor.fetchone():
                     # Book is not in KB, nothing to do
+                    if progress_callback:
+                        progress_callback(3, 3, "Book is not in knowledge base")
                     return
+                
+                if progress_callback:
+                    progress_callback(1, 3, "Removing book from vector store...")
                 
                 # Remove the book from the vector store
                 self._remove_from_vector_store(book_id)
                 
+                if progress_callback:
+                    progress_callback(2, 3, "Updating database...")
+                
                 # Remove the record from the database
                 cursor.execute('DELETE FROM knowledge_base_books WHERE book_id = ?', (book_id,))
+                
+                if progress_callback:
+                    progress_callback(3, 3, "Book successfully removed from knowledge base")
             
             conn.commit()
             
         except Exception as e:
             conn.rollback()
+            if progress_callback:
+                progress_callback(0, 3, f"Error: {str(e)}")
             raise e
         finally:
             conn.close()
@@ -146,16 +176,23 @@ class KnowledgeBase:
             # We need to rebuild the knowledge base with the remaining books
             self._rebuild_vector_store(book_ids)
     
-    def _rebuild_vector_store(self, book_ids):
+    def _rebuild_vector_store(self, book_ids, progress_callback=None):
         """
         Rebuild the vector store with only the specified books.
         
         Args:
             book_ids: List of book IDs to include
+            progress_callback: Optional callback function for progress updates
         """
+        if progress_callback:
+            progress_callback(0, len(book_ids) + 2, "Initializing knowledge base rebuild")
+            
         if not book_ids:
             # If no books, just clear the vector store
             # Chroma doesn't have a clean way to reset, so we'll recreate it
+            if progress_callback:
+                progress_callback(0, 1, "No books selected. Clearing knowledge base.")
+                
             import shutil
             chroma_dir = os.path.join(self.data_dir, "chroma_db")
             if os.path.exists(chroma_dir):
@@ -166,6 +203,9 @@ class KnowledgeBase:
                 persist_directory=chroma_dir,
                 embedding_function=self.embeddings
             )
+            
+            if progress_callback:
+                progress_callback(1, 1, "Knowledge base cleared successfully")
             return
         
         # Get content for each book
@@ -175,7 +215,11 @@ class KnowledgeBase:
         all_texts = []
         all_metadatas = []
         
-        for book_id in book_ids:
+        # Process each book
+        for i, book_id in enumerate(book_ids):
+            if progress_callback:
+                progress_callback(i, len(book_ids) + 2, f"Processing book {i+1} of {len(book_ids)}")
+                
             try:
                 cursor.execute('SELECT content FROM book_content WHERE book_id = ?', (book_id,))
                 result = cursor.fetchone()
@@ -184,17 +228,27 @@ class KnowledgeBase:
                     content = result[0]
                     
                     # Split the text into chunks
+                    if progress_callback:
+                        progress_callback(i, len(book_ids) + 2, f"Splitting book {i+1} into chunks")
                     chunks = self.text_splitter.split_text(content)
                     
                     # Add each chunk with metadata
                     all_texts.extend(chunks)
                     all_metadatas.extend([{"book_id": book_id} for _ in chunks])
+                    
+                    if progress_callback:
+                        progress_callback(i + 0.5, len(book_ids) + 2, f"Added {len(chunks)} chunks from book {i+1}")
             except Exception as e:
                 print(f"Error processing book {book_id}: {e}")
+                if progress_callback:
+                    progress_callback(i, len(book_ids) + 2, f"Error processing book {i+1}: {e}")
         
         conn.close()
         
         # Clear the vector store
+        if progress_callback:
+            progress_callback(len(book_ids), len(book_ids) + 2, "Clearing previous knowledge base")
+            
         import shutil
         chroma_dir = os.path.join(self.data_dir, "chroma_db")
         if os.path.exists(chroma_dir):
@@ -208,8 +262,17 @@ class KnowledgeBase:
         
         # Add all documents to the vector store
         if all_texts:
+            if progress_callback:
+                progress_callback(len(book_ids) + 1, len(book_ids) + 2, 
+                                 f"Adding {len(all_texts)} text chunks to knowledge base")
+            
             self.vector_store.add_texts(texts=all_texts, metadatas=all_metadatas)
             self.vector_store.persist()
+            
+            if progress_callback:
+                progress_callback(len(book_ids) + 2, len(book_ids) + 2, "Knowledge base rebuild complete")
+        elif progress_callback:
+            progress_callback(len(book_ids) + 2, len(book_ids) + 2, "No text to add to knowledge base")
     
     def get_indexed_book_ids(self):
         """
@@ -228,18 +291,22 @@ class KnowledgeBase:
         finally:
             conn.close()
     
-    def rebuild_knowledge_base(self, book_manager):
+    def rebuild_knowledge_base(self, book_manager, progress_callback=None):
         """
         Rebuild the entire knowledge base from the books in the database.
         
         Args:
             book_manager: An instance of BookManager to get book content
+            progress_callback: Optional callback function for progress updates
         """
         # Get all book IDs in the knowledge base
         book_ids = self.get_indexed_book_ids()
         
+        if progress_callback:
+            progress_callback(0, 1, f"Found {len(book_ids)} books in knowledge base")
+        
         # Rebuild the vector store
-        self._rebuild_vector_store(book_ids)
+        self._rebuild_vector_store(book_ids, progress_callback)
     
     def retrieve_relevant_context(self, query, num_results=5):
         """

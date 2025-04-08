@@ -61,37 +61,75 @@ if app_mode == "Book Management":
     book_category = st.text_input("Category (comma-separated for multiple categories)")
     
     if uploaded_file and st.button("Process Book"):
-        with st.spinner("Processing your book..."):
-            # Save the uploaded file temporarily
-            temp_path = f"temp_{int(time.time())}.pdf"
-            with open(temp_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+        # Create placeholder elements for progress tracking
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        info_container = st.container()
+        
+        # Save the uploaded file temporarily
+        temp_path = f"temp_{int(time.time())}.pdf"
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        try:
+            # Initialize processing stage info
+            with info_container:
+                st.info("Initializing PDF processing...")
             
-            # Process the PDF file
-            try:
-                extracted_text = pdf_processor.extract_text(temp_path)
-                
-                # Clean up the extracted text
-                cleaned_text = cleanup_text(extracted_text)
-                
-                # Add book to the database
-                categories = [cat.strip() for cat in book_category.split(",") if cat.strip()]
-                book_id = book_manager.add_book(
-                    title=book_title,
-                    author=book_author,
-                    categories=categories,
-                    file_path=temp_path,
-                    content=cleaned_text
-                )
-                
-                st.success(f"Book '{book_title}' successfully processed and added to your library!")
-                
-            except Exception as e:
-                st.error(f"Error processing book: {e}")
-            finally:
-                # Clean up the temporary file if needed
-                if os.path.exists(temp_path) and temp_path.startswith("temp_"):
-                    os.remove(temp_path)
+            # Define progress callback function
+            def update_progress(current, total, message):
+                if total > 0:
+                    progress_value = min(current / total, 1.0)
+                    progress_bar.progress(progress_value)
+                else:
+                    progress_bar.progress(0)
+                status_text.text(f"Status: {message}")
+                with info_container:
+                    st.info(message)
+            
+            # Display initial page count
+            page_count = pdf_processor.get_page_count(temp_path)
+            with info_container:
+                st.info(f"PDF has {page_count} pages to process")
+            
+            # Process the PDF file with progress updates
+            status_text.text("Starting text extraction...")
+            extracted_text = pdf_processor.extract_text(temp_path, progress_callback=update_progress)
+            
+            # Update progress for text cleanup
+            status_text.text("Cleaning up extracted text...")
+            progress_bar.progress(0.9)  # 90% complete
+            
+            # Clean up the extracted text
+            cleaned_text = cleanup_text(extracted_text)
+            
+            # Update progress for database addition
+            status_text.text("Adding book to database...")
+            progress_bar.progress(0.95)  # 95% complete
+            
+            # Add book to the database
+            categories = [cat.strip() for cat in book_category.split(",") if cat.strip()]
+            book_id = book_manager.add_book(
+                title=book_title,
+                author=book_author,
+                categories=categories,
+                file_path=temp_path,
+                content=cleaned_text
+            )
+            
+            # Complete the progress
+            progress_bar.progress(1.0)
+            status_text.text("Processing complete!")
+            
+            st.success(f"Book '{book_title}' successfully processed and added to your library!")
+            
+        except Exception as e:
+            status_text.text(f"Error: {str(e)}")
+            st.error(f"Error processing book: {e}")
+        finally:
+            # Clean up the temporary file if needed
+            if os.path.exists(temp_path) and temp_path.startswith("temp_"):
+                os.remove(temp_path)
     
     # List and manage existing books
     st.header("Your Book Library")
@@ -184,22 +222,65 @@ elif app_mode == "Knowledge Base":
         
         st.header("Books in Knowledge Base")
         
+        # Add a container for progress tracking that will be shown when toggling books
+        progress_container = st.container()
+        
+        # Helper function to toggle a book with progress tracking
+        def toggle_book_with_progress(book_id, is_in_kb):
+            with progress_container:
+                # Create progress tracking elements
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                info_text = st.empty()
+                
+                # Define progress callback function
+                def update_progress(current, total, message):
+                    if total > 0:
+                        progress_value = min(current / total, 1.0)
+                        progress_bar.progress(progress_value)
+                    else:
+                        progress_bar.progress(0)
+                    status_text.text(f"Status: {message}")
+                    info_text.info(message)
+                
+                try:
+                    # Get book content
+                    book_content = book_manager.get_book_content(book_id)
+                    
+                    # Toggle the book with progress tracking
+                    knowledge_base.toggle_book_in_knowledge_base(
+                        book_id, 
+                        book_content,
+                        add_to_kb=not is_in_kb,
+                        progress_callback=update_progress
+                    )
+                    
+                    # Force page refresh to update the UI
+                    st.rerun()
+                    
+                except Exception as e:
+                    status_text.text(f"Error: {str(e)}")
+                    st.error(f"Error: {e}")
+        
         for book in all_books:
             col1, col2 = st.columns([3, 1])
             
             with col1:
                 is_in_kb = book['id'] in kb_book_ids
-                st.checkbox(
+                if st.checkbox(
                     f"{book['title']} by {book['author']}",
                     value=is_in_kb,
-                    key=f"kb_{book['id']}",
-                    on_change=lambda book_id=book['id'], is_checked=not is_in_kb: 
-                        knowledge_base.toggle_book_in_knowledge_base(
-                            book_id, 
-                            book_manager.get_book_content(book_id),
-                            add_to_kb=not is_in_kb
-                        )
-                )
+                    key=f"kb_{book['id']}"
+                ):
+                    # This means the checkbox is checked (book should be in KB)
+                    if not is_in_kb:
+                        # Book isn't in KB yet but should be - toggle it
+                        toggle_book_with_progress(book['id'], is_in_kb)
+                else:
+                    # Checkbox is unchecked (book should not be in KB)
+                    if is_in_kb:
+                        # Book is in KB but shouldn't be - toggle it
+                        toggle_book_with_progress(book['id'], is_in_kb)
             
             with col2:
                 if book['id'] in kb_book_ids:
@@ -209,9 +290,37 @@ elif app_mode == "Knowledge Base":
         
         # Button to rebuild the entire knowledge base
         if st.button("Rebuild Complete Knowledge Base"):
-            with st.spinner("Rebuilding knowledge base... This may take some time."):
-                knowledge_base.rebuild_knowledge_base(book_manager)
+            # Create progress tracking elements
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            info_container = st.container()
+            
+            with info_container:
+                st.info("Starting knowledge base rebuild...")
+            
+            # Define progress callback function
+            def update_progress(current, total, message):
+                if total > 0:
+                    progress_value = min(current / total, 1.0)
+                    progress_bar.progress(progress_value)
+                else:
+                    progress_bar.progress(0)
+                status_text.text(f"Status: {message}")
+                with info_container:
+                    st.info(message)
+            
+            try:
+                # Rebuild the knowledge base with progress tracking
+                knowledge_base.rebuild_knowledge_base(book_manager, progress_callback=update_progress)
+                
+                # Complete the progress
+                progress_bar.progress(1.0)
+                status_text.text("Rebuild complete!")
                 st.success("Knowledge base rebuilt successfully!")
+                
+            except Exception as e:
+                status_text.text(f"Error: {str(e)}")
+                st.error(f"Error rebuilding knowledge base: {e}")
 
 # Chat with AI
 elif app_mode == "Chat with AI":
