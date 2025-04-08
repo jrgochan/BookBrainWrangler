@@ -4,7 +4,14 @@
 echo "Starting Book Knowledge AI..."
 
 # Activate the virtual environment
-source venv/bin/activate
+if [ -d "venv" ]; then
+    source venv/bin/activate
+elif [ -d ".venv" ]; then
+    source .venv/bin/activate
+else
+    echo "Virtual environment not found. Please run setup_local_environment.sh first."
+    exit 1
+fi
 
 # Check if Ollama is running
 echo "Checking if Ollama service is running..."

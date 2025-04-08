@@ -2,10 +2,20 @@ import os
 import json
 import time
 import tempfile
+import importlib.util
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
 from langchain_community.embeddings import FakeEmbeddings
 from database import get_connection
+
+# Try to import Chroma from langchain_chroma (new package)
+# Fall back to langchain_community.vectorstores if not available
+try:
+    from langchain_chroma import Chroma
+    print("Using langchain_chroma.Chroma")
+except ImportError:
+    # Fall back to the old import path
+    print("langchain_chroma not found, falling back to langchain_community.vectorstores")
+    from langchain_community.vectorstores import Chroma
 
 class KnowledgeBase:
     def __init__(self):
