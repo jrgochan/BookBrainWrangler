@@ -16,6 +16,10 @@ fi
 echo "Installing system dependencies..."
 sudo apt-get install -y tesseract-ocr libtesseract-dev poppler-utils
 
+# Install Java dependencies if needed (for jnius)
+echo "Installing Java dependencies..."
+sudo apt-get install -y default-jdk
+
 # Create a virtual environment
 echo "Creating Python virtual environment..."
 python3 -m venv .venv
@@ -25,8 +29,75 @@ source .venv/bin/activate
 echo "Installing Python packages..."
 pip install --upgrade pip
 
-# Install packages from pyproject.toml using pip
-pip install chromadb langchain langchain-community langchain-text-splitters pdf2image pypdf2 pytesseract requests streamlit
+# Install Cython first (required for jnius)
+echo "Installing Cython (required for some dependencies)..."
+pip install Cython
+
+# Create requirements.txt file for core dependencies
+cat > requirements.txt << EOL
+# Core requirements
+chromadb>=1.0.3
+langchain>=0.3.23
+langchain-community>=0.3.21
+langchain-text-splitters>=0.3.8
+pdf2image>=1.17.0
+pypdf2>=3.0.1
+pytesseract>=0.3.13
+requests>=2.32.3
+streamlit>=1.44.1
+
+# Additional dependencies from your project
+attr>=0.3.2
+ConfigParser>=7.2.0
+contextlib2>=21.6.0
+cryptography>=44.0.2
+docutils>=0.21.2
+filelock>=3.18.0
+importlib_metadata>=8.6.1
+ipython>=8.12.3
+ipywidgets>=8.1.5
+Jinja2>=3.1.6
+# Note: jnius is optional and installed separately
+EOL
+
+# Install dependencies
+echo "Installing dependencies from requirements.txt..."
+pip install -r requirements.txt
+
+# Try to install jnius with enhanced error handling for WSL2 environments
+echo "Attempting to install jnius with special handling for WSL2..."
+
+# Set JAVA_HOME properly
+java_path=$(readlink -f $(which java) 2>/dev/null | sed 's:/bin/java::')
+if [ -n "$java_path" ]; then
+    echo "Found Java at: $java_path"
+    export JAVA_HOME=$java_path
+    echo "JAVA_HOME set to: $JAVA_HOME"
+else
+    echo "Warning: Could not determine Java path automatically."
+    echo "You may need to set JAVA_HOME manually."
+    echo "Typical locations include /usr/lib/jvm/default-java or /usr/lib/jvm/java-11-openjdk-amd64"
+    echo "Export JAVA_HOME in your shell: export JAVA_HOME=/path/to/java"
+fi
+
+# Try installing with --no-binary flag which often works better in WSL2
+echo "Installing jnius with special compilation flags..."
+JAVA_HOME=$java_path pip install --no-binary :all: jnius || {
+    echo "Standard jnius installation failed. Attempting alternative methods..."
+    
+    # Try with explicit compiler flags
+    echo "Attempting installation with explicit compiler flags..."
+    JAVA_HOME=$java_path CFLAGS="-fPIC" pip install jnius || {
+        echo ""
+        echo "jnius installation could not be completed automatically."
+        echo "This is not uncommon in WSL2 environments."
+        echo ""
+        echo "For manual installation, run: ./scripts/fix-jnius-install.sh"
+        echo "or follow the detailed instructions in README.md"
+        echo ""
+        echo "Note: jnius is optional and the core functionality should still work."
+    }
+}
 
 # Create .streamlit directory if it doesn't exist
 if [ ! -d .streamlit ]; then

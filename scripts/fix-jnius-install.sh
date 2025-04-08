@@ -1,0 +1,17 @@
+#!/bin/bash
+
+echo "jnius Installation Guide for WSL2 Ubuntu"
+echo "========================================"
+echo ""
+echo "Follow these steps to install jnius:"
+echo ""
+echo "1. Install system dependencies:"
+echo "   (Install Java JDK, build tools, and Python development packages)"
+echo ""
+echo "2. Set JAVA_HOME environment variable"
+echo "   (Find your Java installation path and set it)"
+echo ""
+echo "3. Install Cython, then jnius:"
+echo "   (Install Cython first, then jnius with special flags)"
+echo ""
+echo "For detailed instructions, see README.md"
