@@ -8,6 +8,9 @@ import re
 import base64
 import json
 import time
+import requests
+from urllib.parse import urlparse
+import pathlib
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
 import PyPDF2
 import pytesseract
@@ -288,12 +291,61 @@ class DocumentProcessor:
                     if "image" in rel.target_ref:
                         image_rels.append(rel)
                 
-                # Process each image
-                for i, rel in enumerate(image_rels):
-                    try:
-                        # Get image data
-                        image_data = rel.target_part.blob
+            # Process each image
+            for i, rel in enumerate(image_rels):
+                try:
+                    # Check if this is an external image
+                    is_external = hasattr(rel, 'target_mode') and rel.target_mode == 'External'
+                    
+                    image_data = None
+                    if is_external:
+                        # Handle external image reference
+                        target_url = rel.target_ref
+                        logger.info(f"Processing external image {i+1}: {target_url}")
                         
+                        # Handle different external reference types
+                        if target_url.startswith(('http://', 'https://')):
+                            # Download from URL
+                            try:
+                                response = requests.get(target_url, timeout=10)
+                                response.raise_for_status()  # Raise exception for HTTP errors
+                                image_data = response.content
+                                logger.info(f"Successfully downloaded image from URL: {target_url}")
+                            except Exception as e:
+                                logger.error(f"Failed to download image from URL {target_url}: {str(e)}")
+                                continue
+                        else:
+                            # Handle file path (could be absolute or relative)
+                            try:
+                                # First try as absolute path
+                                img_path = pathlib.Path(target_url)
+                                
+                                # If not exists and seems like a relative path, try relative to the docx
+                                if not img_path.exists() and not img_path.is_absolute():
+                                    docx_dir = pathlib.Path(docx_path).parent
+                                    img_path = docx_dir / target_url
+                                
+                                # If we found the file, read it
+                                if img_path.exists():
+                                    with open(img_path, 'rb') as f:
+                                        image_data = f.read()
+                                    logger.info(f"Successfully read image from file: {img_path}")
+                                else:
+                                    logger.error(f"External image file not found: {target_url}")
+                                    continue
+                            except Exception as e:
+                                logger.error(f"Failed to read external image file {target_url}: {str(e)}")
+                                continue
+                    else:
+                        # Regular embedded image
+                        try:
+                            image_data = rel.target_part.blob
+                        except Exception as e:
+                            logger.error(f"Error accessing embedded image data: {str(e)}")
+                            continue
+                    
+                    # Process image data (same for both external and embedded)
+                    if image_data:
                         # Convert to base64 for storage/display
                         img_base64 = base64.b64encode(image_data).decode('utf-8')
                         
@@ -307,20 +359,23 @@ class DocumentProcessor:
                         
                         # For UI display, create an image
                         if progress_callback:
-                            # Load image for UI display
-                            img = Image.open(io.BytesIO(image_data))
-                            
-                            # Report progress with image
-                            progress_text = f"Processing image {i+1}/{len(image_rels)}"
-                            send_progress(total_elements - len(image_rels) + i, total_elements, {
-                                'text': progress_text,
-                                'current_image': img_base64,
-                                'ocr_text': f"Image {i+1} from document",
-                                'confidence': 100.0,  # Full confidence for embedded images
-                                'action': 'extracting'
-                            })
-                    except Exception as e:
-                        logger.error(f"Error processing image {i+1}: {str(e)}")
+                            try:
+                                # Load image for UI display
+                                img = Image.open(io.BytesIO(image_data))
+                                
+                                # Report progress with image
+                                progress_text = f"Processing image {i+1}/{len(image_rels)}"
+                                send_progress(total_elements - len(image_rels) + i, total_elements, {
+                                    'text': progress_text,
+                                    'current_image': img_base64,
+                                    'ocr_text': f"Image {i+1} from document",
+                                    'confidence': 100.0,  # Full confidence for images
+                                    'action': 'extracting'
+                                })
+                            except Exception as e:
+                                logger.error(f"Error displaying image {i+1}: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error processing image {i+1}: {str(e)}")
             
             # Final progress update
             send_progress(total_elements, total_elements, {'text': "DOCX processing complete", 'action': 'completed'})

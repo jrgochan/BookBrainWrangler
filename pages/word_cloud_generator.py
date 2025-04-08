@@ -95,16 +95,40 @@ def render_word_cloud_generator_page(book_manager):
     # Generate button
     if st.button("Generate Word Cloud"):
         try:
+            # Import the word cloud component
+            from components.word_cloud import render_word_cloud, get_word_cloud_download_link
+            
             # Generate word cloud
             with st.spinner("Generating word cloud..."):
-                # Analyze word frequency
-                word_freq = analyze_word_frequency(
-                    text_to_analyze,
-                    min_word_length=min_word_length,
-                    max_words=max_words*2,  # Get more words than needed for the cloud to have options
-                    exclude_stopwords=exclude_stopwords,
-                    custom_stopwords=custom_stopword_list
-                )
+                try:
+                    # Ensure NLTK resources are available
+                    from utils.text_processing import ensure_nltk_resources
+                    ensure_nltk_resources()
+                    
+                    # Analyze word frequency
+                    word_freq = analyze_word_frequency(
+                        text_to_analyze,
+                        min_word_length=min_word_length,
+                        max_words=max_words*2,  # Get more words than needed for the cloud to have options
+                        exclude_stopwords=exclude_stopwords,
+                        custom_stopwords=custom_stopword_list
+                    )
+                except Exception as nltk_error:
+                    st.error(f"Error with text processing: {str(nltk_error)}")
+                    st.info("Installing missing NLTK resources...")
+                    # Force direct download of required resources
+                    import nltk
+                    nltk.download('punkt')
+                    nltk.download('stopwords')
+                    
+                    # Try again after downloading
+                    word_freq = analyze_word_frequency(
+                        text_to_analyze,
+                        min_word_length=min_word_length,
+                        max_words=max_words*2,
+                        exclude_stopwords=exclude_stopwords,
+                        custom_stopwords=custom_stopword_list
+                    )
                 
                 if not word_freq:
                     st.warning("No words found matching your criteria. Try adjusting your settings.")
@@ -114,8 +138,6 @@ def render_word_cloud_generator_page(book_manager):
                 tab1, tab2 = st.tabs(["Word Cloud", "Word Frequency Analysis"])
                 
                 with tab1:
-                    # This would use a word cloud library in a real implementation
-                    # For now, we'll create a simple visualization with matplotlib
                     st.subheader("Word Cloud Visualization")
                     
                     # Get the top words for the cloud
@@ -124,44 +146,28 @@ def render_word_cloud_generator_page(book_manager):
                     # Create a message about generating word clouds
                     st.info(f"Word cloud generated with {len(top_words)} most frequent words from '{selected_book['title']}'")
                     
-                    # In a real implementation, we would use the WordCloud library 
-                    # to generate an actual word cloud image
-                    st.markdown("""
-                    ```
-                    # This represents the word cloud visualization
-                    # In the actual application, a visual word cloud is displayed here
-                    # using the wordcloud library with the following settings:
-                    #   - Max words: {}
-                    #   - Color scheme: {}
-                    #   - Background: {}
-                    ```
-                    """.format(max_words, colormap, background_color))
+                    # Convert the word frequency list to a dictionary for the word cloud
+                    word_freq_dict = {word: count for word, count in top_words}
                     
-                    # Create a simple visualiation of the most frequent words
-                    # as a horizontal bar chart
-                    fig, ax = plt.figure(figsize=(10, 8)), plt.axes()
+                    # Generate the word cloud using our component
+                    word_cloud_fig = render_word_cloud(
+                        word_freq_dict,
+                        colormap=colormap,
+                        background_color=background_color,
+                        width=800,
+                        height=400,
+                        max_words=max_words
+                    )
                     
-                    # Plot top 25 words
-                    display_words = word_freq[:25]
-                    words = [word for word, _ in display_words]
-                    counts = [count for _, count in display_words]
+                    # Display the word cloud
+                    st.pyplot(word_cloud_fig)
                     
-                    # Colors based on selected colormap
-                    colors = plt.cm.get_cmap(colormap)(range(len(display_words)))
-                    
-                    # Create horizontal bar chart
-                    bars = ax.barh(words[::-1], counts[::-1], color=colors)
-                    
-                    # Labels and title
-                    ax.set_title(f"Top 25 Words in '{selected_book['title']}'")
-                    ax.set_xlabel("Frequency")
-                    
-                    # Set background color
-                    ax.set_facecolor(background_color)
-                    fig.set_facecolor(background_color)
-                    
-                    # Show the plot
-                    st.pyplot(fig)
+                    # Add download link
+                    download_link = get_word_cloud_download_link(
+                        word_cloud_fig, 
+                        filename=f"{selected_book['title']}_wordcloud.png".replace(" ", "_")
+                    )
+                    st.markdown(download_link, unsafe_allow_html=True)
                 
                 with tab2:
                     st.subheader("Word Frequency Analysis")

@@ -14,15 +14,27 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
 # Ensure NLTK data is downloaded
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', quiet=True)
+def ensure_nltk_resources():
+    """Download the required NLTK resources if they're not already available."""
+    import os
+    
+    # Force download to user's home directory for more reliable access
+    nltk_data_path = os.path.expanduser('~/nltk_data')
+    os.makedirs(nltk_data_path, exist_ok=True)
+    
+    # Add the home directory to NLTK's data path search
+    nltk.data.path.insert(0, nltk_data_path)
+    
+    # Download required resources
+    for resource in ['punkt', 'stopwords']:
+        try:
+            nltk.data.find(f'tokenizers/{resource}')
+        except LookupError:
+            print(f"Downloading NLTK resource '{resource}' to {nltk_data_path}")
+            nltk.download(resource, download_dir=nltk_data_path, quiet=False)
 
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords', quiet=True)
+# Run our initialization function
+ensure_nltk_resources()
 
 def cleanup_text(text: str) -> str:
     """

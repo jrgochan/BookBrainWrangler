@@ -28,14 +28,8 @@ def format_record(record):
     log_level = LOG_LEVELS.get(record["level"].name, {"name": record["level"].name, "color": ""})
     
     # Format: [time] [level] [module:line_no] [function] message
-    format_string = (
-        "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
-        f"{log_level['color']}{{level: <8}}</level> | "
-        "<cyan>{name}:{line}</cyan> | "
-        "<magenta>{function}</magenta> | "
-        "{message}\n"
-        "{exception}"
-    )
+    # Using a simpler format to avoid tag parsing issues
+    format_string = "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{line} | {function} | {message}\n{exception}"
     
     return format_string
 
