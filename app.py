@@ -5,6 +5,7 @@ from book_manager import BookManager
 from document_processor import DocumentProcessor
 from knowledge_base import KnowledgeBase
 from ollama_client import OllamaClient
+from database import get_connection
 from utils import cleanup_text, generate_thumbnail, generate_placeholder_thumbnail
 
 # Initialize the components

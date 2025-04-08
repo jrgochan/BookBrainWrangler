@@ -46,7 +46,8 @@ class KnowledgeBase:
         except Exception as e:
             print(f"Could not initialize HuggingFaceEmbeddings: {e}")
             print("Falling back to FakeEmbeddings - NOTE: This will not provide meaningful search results!")
-            self.embeddings = FakeEmbeddings(size=384)
+            # Use dimension of 768 as that seems to be already in use in the collection
+            self.embeddings = FakeEmbeddings(size=768)
         
         # Initialize the vector store with safety checks
         chroma_dir = os.path.join(self.data_dir, "chroma_db")
