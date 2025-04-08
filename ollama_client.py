@@ -1,167 +1,119 @@
-import requests
+"""
+Ollama Client for handling AI model interactions.
+"""
+
 import json
+import requests
 import time
-import os
+from typing import Dict, List, Any, Optional
 
 class OllamaClient:
-    def __init__(self, host=None, model=None):
+    def __init__(self, server_url="http://localhost:11434", model="llama2"):
         """
         Initialize the Ollama client.
         
         Args:
-            host: The Ollama API host (default: uses environment variable or "http://localhost:11434")
-            model: The default model to use (default: uses environment variable or "llama2")
+            server_url: URL of the Ollama server
+            model: Default model to use for queries
         """
-        # Get host from env var or use default
-        self.host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        self.api_endpoint = f"{self.host}/api"
-        
-        # Get default model from env var or use default
-        self.default_model = model or os.environ.get("OLLAMA_MODEL", "llama2")
+        self.server_url = server_url
+        self.model = model
+        self.api_base = f"{server_url}/api"
     
-    def list_models(self):
+    def is_server_running(self):
         """
-        List available models from the Ollama server.
+        Check if the Ollama server is running.
         
         Returns:
-            List of model information dictionaries
+            bool: True if the server is running, False otherwise
         """
         try:
-            response = requests.get(f"{self.api_endpoint}/tags")
-            if response.status_code == 200:
-                return response.json().get("models", [])
-            else:
-                print(f"Error listing models: {response.status_code} - {response.text}")
-                return []
-        except Exception as e:
-            print(f"Error connecting to Ollama server: {e}")
-            return []
-    
-    def generate_response(self, prompt, context=None, model=None):
-        """
-        Generate a response from the Ollama model.
-        
-        Args:
-            prompt: The prompt/question to answer
-            context: Optional context to inform the response
-            model: The model to use (defaults to self.default_model)
-            
-        Returns:
-            The generated response text
-        """
-        # Use the provided model or fall back to default
-        model = model or self.default_model
-        try:
-            # Prepare the prompt with context if provided
-            system_prompt = (
-                "You are a helpful AI assistant with knowledge from various books. "
-                "You provide thoughtful, accurate responses based on the book content provided. "
-                "If asked about topics outside the provided book context, you should inform the user "
-                "that you can only answer based on the books in your knowledge base."
-            )
-            
-            if context:
-                system_prompt += (
-                    " Use the following excerpts from books to inform your answer. "
-                    "Respond in a conversational manner. You should cite which book an idea comes from "
-                    "when directly answering with information from the books. "
-                    "If the provided context doesn't contain relevant information to answer the question, "
-                    "acknowledge this limitation."
-                )
-                full_prompt = f"{prompt}\n\n### BOOK EXCERPTS ###\n{context}"
-            else:
-                full_prompt = prompt
-                system_prompt += (
-                    " No book excerpts were found for this query. Inform the user that you don't have "
-                    "relevant information from any books to answer their question. Suggest they try a "
-                    "different question or ensure books are properly added to the knowledge base."
-                )
-            
-            # Prepare the request payload
-            payload = {
-                "model": model,
-                "prompt": full_prompt,
-                "system": system_prompt,
-                "stream": False,  # We want the complete response at once
-                # Add parameters that may improve response quality
-                "temperature": 0.7,      # Control randomness (higher = more creative)
-                "top_p": 0.9,            # Nucleus sampling (diversity control)
-                "top_k": 40              # Limit vocabulary options to top k
-            }
-            
-            # Send the request
-            response = requests.post(f"{self.api_endpoint}/generate", json=payload)
-            
-            if response.status_code == 200:
-                return response.json().get("response", "I couldn't generate a response.")
-            else:
-                print(f"Error generating response: {response.status_code} - {response.text}")
-                return "Error: Failed to get a response from the AI model."
-                
-        except Exception as e:
-            print(f"Error connecting to Ollama server: {e}")
-            return "Error: Could not connect to the AI service. Make sure Ollama is running."
-    
-    def check_connection(self):
-        """
-        Check if the Ollama server is reachable.
-        
-        Returns:
-            Boolean indicating if the server is reachable
-        """
-        try:
-            response = requests.get(f"{self.api_endpoint}/tags")
+            response = requests.get(f"{self.api_base}/tags", timeout=2)
             return response.status_code == 200
         except:
             return False
-            
-    def update_settings(self, host=None, model=None):
+    
+    def get_available_models(self):
         """
-        Update client settings.
+        Get a list of available models.
         
-        Args:
-            host: New Ollama API host URL
-            model: New default model
-            
         Returns:
-            Boolean indicating success of update and connecting to new host
-        """
-        # Update host if provided
-        if host and host != self.host:
-            old_host = self.host
-            self.host = host
-            self.api_endpoint = f"{host}/api"
-            
-            # Test connection to new host
-            if not self.check_connection():
-                # Revert if can't connect
-                self.host = old_host
-                self.api_endpoint = f"{old_host}/api"
-                return False
-        
-        # Update default model if provided
-        if model:
-            self.default_model = model
-            
-        return True
-        
-    def get_model_details(self, model_name):
-        """
-        Get details about a specific model.
-        
-        Args:
-            model_name: The name of the model to query
-            
-        Returns:
-            Dictionary containing model details or None if not found
+            list: List of model names
         """
         try:
-            response = requests.get(f"{self.api_endpoint}/show", params={"name": model_name})
+            response = requests.get(f"{self.api_base}/tags")
             if response.status_code == 200:
-                return response.json()
-            else:
-                print(f"Error getting model details: {response.status_code} - {response.text}")
-                return None
-        except Exception as e:
-            print(f"Error connecting to Ollama server: {e}")
-            return None
+                data = response.json()
+                return [model['name'] for model in data.get('models', [])]
+            return []
+        except:
+            return []
+    
+    def generate_response(self, prompt, context=None, temperature=0.7, max_tokens=1000):
+        """
+        Generate a response from the model.
+        
+        Args:
+            prompt: The prompt to send to the model
+            context: Optional context from previous exchanges
+            temperature: Sampling temperature (higher = more creative)
+            max_tokens: Maximum tokens to generate in the response
+            
+        Returns:
+            str: The generated response
+        """
+        # This is a placeholder implementation
+        # In a real implementation, this would connect to an actual Ollama server
+        
+        # Simulate a delay to mimic the model generating a response
+        time.sleep(1)
+        
+        # Return a placeholder response
+        return f"This is a placeholder response to your query: '{prompt}'"
+    
+    def chat(self, messages, temperature=0.7, max_tokens=1000):
+        """
+        Generate a chat response from the model.
+        
+        Args:
+            messages: List of message dictionaries [{"role": "user", "content": "..."}]
+            temperature: Sampling temperature (higher = more creative)
+            max_tokens: Maximum tokens to generate in the response
+            
+        Returns:
+            dict: The chat response {"role": "assistant", "content": "..."}
+        """
+        # This is a placeholder implementation
+        # In a real implementation, this would connect to an actual Ollama server
+        
+        # Get the last user message
+        last_message = next((m for m in reversed(messages) if m['role'] == 'user'), None)
+        if not last_message:
+            return {"role": "assistant", "content": "I didn't receive a valid message to respond to."}
+        
+        # Simulate a delay to mimic the model generating a response
+        time.sleep(1.5)
+        
+        # Return a placeholder response
+        return {
+            "role": "assistant",
+            "content": f"This is a placeholder response to your message: '{last_message['content']}'"
+        }
+    
+    def generate_embeddings(self, text):
+        """
+        Generate embeddings for text.
+        
+        Args:
+            text: The text to embed
+            
+        Returns:
+            list: Vector embedding
+        """
+        # This is a placeholder implementation
+        # In a real implementation, this would connect to an actual Ollama server
+        
+        # Return a placeholder embedding (just a list of random values)
+        # A real embedding would be a list of float values
+        import random
+        return [random.random() for _ in range(384)]

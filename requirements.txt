@@ -37,3 +37,10 @@ pandas
 plotly
 scikit-learn
 wordcloud
+matplotlib
+nltk
+numpy
+pandas
+plotly
+scikit-learn
+streamlit

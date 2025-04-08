@@ -1,11 +1,16 @@
+"""
+Book Manager module for handling book operations.
+"""
+
+import os
 import sqlite3
-import datetime
+import json
+from typing import Dict, List, Any, Optional, Union
 from database import get_connection
 
 class BookManager:
     def __init__(self):
         """Initialize the BookManager with a database connection."""
-        # Make sure the database is initialized
         self._init_database()
     
     def _init_database(self):
@@ -15,41 +20,41 @@ class BookManager:
         
         # Create books table
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS books (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                author TEXT NOT NULL,
-                file_path TEXT,
-                date_added TEXT NOT NULL
-            )
+        CREATE TABLE IF NOT EXISTS books (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            author TEXT NOT NULL,
+            file_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
         ''')
         
         # Create categories table
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL
-            )
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
+        )
         ''')
         
-        # Create book_categories junction table for many-to-many relationship
+        # Create book_categories junction table
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS book_categories (
-                book_id INTEGER,
-                category_id INTEGER,
-                PRIMARY KEY (book_id, category_id),
-                FOREIGN KEY (book_id) REFERENCES books (id) ON DELETE CASCADE,
-                FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE
-            )
+        CREATE TABLE IF NOT EXISTS book_categories (
+            book_id INTEGER,
+            category_id INTEGER,
+            PRIMARY KEY (book_id, category_id),
+            FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+        )
         ''')
         
-        # Create book_content table to store the extracted text content
+        # Create book_contents table for storing extracted text
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS book_content (
-                book_id INTEGER PRIMARY KEY,
-                content TEXT,
-                FOREIGN KEY (book_id) REFERENCES books (id) ON DELETE CASCADE
-            )
+        CREATE TABLE IF NOT EXISTS book_contents (
+            book_id INTEGER PRIMARY KEY,
+            content TEXT,
+            FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+        )
         ''')
         
         conn.commit()
@@ -70,44 +75,39 @@ class BookManager:
             The ID of the newly added book
         """
         conn = get_connection()
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         try:
-            # Get current date in ISO format
-            date_added = datetime.datetime.now().isoformat()
-            
-            # Insert the book
+            # Insert book
             cursor.execute(
-                'INSERT INTO books (title, author, file_path, date_added) VALUES (?, ?, ?, ?)',
-                (title, author, file_path, date_added)
+                "INSERT INTO books (title, author, file_path) VALUES (?, ?, ?)",
+                (title, author, file_path)
             )
-            
-            # Get the book ID
             book_id = cursor.lastrowid
             
             # Add categories
             for category in categories:
-                # Try to find the category ID
-                cursor.execute('SELECT id FROM categories WHERE name = ?', (category,))
-                result = cursor.fetchone()
-                
-                if result:
-                    category_id = result[0]
-                else:
-                    # Create new category
-                    cursor.execute('INSERT INTO categories (name) VALUES (?)', (category,))
-                    category_id = cursor.lastrowid
-                
-                # Link the book to the category
+                # Insert category if it doesn't exist
                 cursor.execute(
-                    'INSERT INTO book_categories (book_id, category_id) VALUES (?, ?)',
+                    "INSERT OR IGNORE INTO categories (name) VALUES (?)",
+                    (category,)
+                )
+                
+                # Get category ID
+                cursor.execute("SELECT id FROM categories WHERE name = ?", (category,))
+                category_id = cursor.fetchone()[0]
+                
+                # Link book to category
+                cursor.execute(
+                    "INSERT INTO book_categories (book_id, category_id) VALUES (?, ?)",
                     (book_id, category_id)
                 )
             
-            # Store book content if provided
+            # Add content if provided
             if content:
                 cursor.execute(
-                    'INSERT INTO book_content (book_id, content) VALUES (?, ?)',
+                    "INSERT INTO book_contents (book_id, content) VALUES (?, ?)",
                     (book_id, content)
                 )
             
@@ -134,54 +134,54 @@ class BookManager:
         cursor = conn.cursor()
         
         try:
-            # Update book information if provided
-            if title is not None or author is not None:
-                update_parts = []
+            # Update title and/or author if provided
+            if title or author:
+                update_fields = []
                 params = []
                 
-                if title is not None:
-                    update_parts.append("title = ?")
+                if title:
+                    update_fields.append("title = ?")
                     params.append(title)
                 
-                if author is not None:
-                    update_parts.append("author = ?")
+                if author:
+                    update_fields.append("author = ?")
                     params.append(author)
                 
                 params.append(book_id)
+                
                 cursor.execute(
-                    f"UPDATE books SET {', '.join(update_parts)} WHERE id = ?",
-                    params
+                    f"UPDATE books SET {', '.join(update_fields)} WHERE id = ?",
+                    tuple(params)
                 )
             
             # Update categories if provided
-            if categories is not None:
-                # First, remove all existing category links
+            if categories:
+                # Delete existing category links
                 cursor.execute(
-                    'DELETE FROM book_categories WHERE book_id = ?',
+                    "DELETE FROM book_categories WHERE book_id = ?",
                     (book_id,)
                 )
                 
-                # Then, add the new categories
+                # Add new categories
                 for category in categories:
-                    # Try to find the category ID
-                    cursor.execute('SELECT id FROM categories WHERE name = ?', (category,))
-                    result = cursor.fetchone()
-                    
-                    if result:
-                        category_id = result[0]
-                    else:
-                        # Create new category
-                        cursor.execute('INSERT INTO categories (name) VALUES (?)', (category,))
-                        category_id = cursor.lastrowid
-                    
-                    # Link the book to the category
+                    # Insert category if it doesn't exist
                     cursor.execute(
-                        'INSERT INTO book_categories (book_id, category_id) VALUES (?, ?)',
+                        "INSERT OR IGNORE INTO categories (name) VALUES (?)",
+                        (category,)
+                    )
+                    
+                    # Get category ID
+                    cursor.execute("SELECT id FROM categories WHERE name = ?", (category,))
+                    category_id = cursor.fetchone()[0]
+                    
+                    # Link book to category
+                    cursor.execute(
+                        "INSERT INTO book_categories (book_id, category_id) VALUES (?, ?)",
                         (book_id, category_id)
                     )
             
             conn.commit()
-            
+        
         except Exception as e:
             conn.rollback()
             raise e
@@ -199,10 +199,26 @@ class BookManager:
         cursor = conn.cursor()
         
         try:
-            # Delete the book (cascade will take care of related records)
-            cursor.execute('DELETE FROM books WHERE id = ?', (book_id,))
-            conn.commit()
+            # Get book info before deletion (for potential file cleanup)
+            cursor.execute("SELECT file_path FROM books WHERE id = ?", (book_id,))
+            book = cursor.fetchone()
             
+            if book:
+                file_path = book[0]
+                
+                # Delete the book (cascade will delete related records)
+                cursor.execute("DELETE FROM books WHERE id = ?", (book_id,))
+                
+                # Delete the physical file if it exists and is a file
+                if file_path and os.path.isfile(file_path):
+                    try:
+                        os.remove(file_path)
+                    except:
+                        # Just log or ignore if file deletion fails
+                        pass
+            
+            conn.commit()
+        
         except Exception as e:
             conn.rollback()
             raise e
@@ -220,41 +236,42 @@ class BookManager:
             A dictionary with the book details or None if not found
         """
         conn = get_connection()
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         try:
-            # Get the book
-            cursor.execute('''
-                SELECT b.id, b.title, b.author, b.file_path, b.date_added
-                FROM books b
-                WHERE b.id = ?
-            ''', (book_id,))
+            # Get book
+            cursor.execute(
+                """
+                SELECT books.id, books.title, books.author, books.file_path, books.created_at
+                FROM books
+                WHERE books.id = ?
+                """,
+                (book_id,)
+            )
+            book_row = cursor.fetchone()
             
-            book_data = cursor.fetchone()
-            if not book_data:
+            if not book_row:
                 return None
             
-            # Get the book's categories
-            cursor.execute('''
-                SELECT c.name
-                FROM categories c
-                JOIN book_categories bc ON c.id = bc.category_id
-                WHERE bc.book_id = ?
-            ''', (book_id,))
+            # Convert row to dict
+            book = dict(book_row)
             
-            categories = [row[0] for row in cursor.fetchall()]
+            # Get categories
+            cursor.execute(
+                """
+                SELECT categories.name
+                FROM categories
+                JOIN book_categories ON categories.id = book_categories.category_id
+                WHERE book_categories.book_id = ?
+                """,
+                (book_id,)
+            )
             
-            book = {
-                'id': book_data[0],
-                'title': book_data[1],
-                'author': book_data[2],
-                'file_path': book_data[3],
-                'date_added': book_data[4],
-                'categories': categories
-            }
+            book['categories'] = [row['name'] for row in cursor.fetchall()]
             
             return book
-            
+        
         finally:
             conn.close()
     
@@ -272,10 +289,16 @@ class BookManager:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT content FROM book_content WHERE book_id = ?', (book_id,))
+            cursor.execute(
+                "SELECT content FROM book_contents WHERE book_id = ?",
+                (book_id,)
+            )
             result = cursor.fetchone()
-            return result[0] if result else None
             
+            if result:
+                return result[0]
+            return None
+        
         finally:
             conn.close()
     
@@ -287,43 +310,41 @@ class BookManager:
             A list of dictionaries with book details
         """
         conn = get_connection()
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         try:
             # Get all books
-            cursor.execute('''
-                SELECT b.id, b.title, b.author, b.file_path, b.date_added
-                FROM books b
-                ORDER BY b.date_added DESC
-            ''')
+            cursor.execute(
+                """
+                SELECT books.id, books.title, books.author, books.file_path, books.created_at
+                FROM books
+                ORDER BY books.title
+                """
+            )
+            book_rows = cursor.fetchall()
             
+            # Convert rows to dicts and add categories
             books = []
-            for book_data in cursor.fetchall():
-                book_id = book_data[0]
+            for book_row in book_rows:
+                book = dict(book_row)
                 
-                # Get the book's categories
-                cursor.execute('''
-                    SELECT c.name
-                    FROM categories c
-                    JOIN book_categories bc ON c.id = bc.category_id
-                    WHERE bc.book_id = ?
-                ''', (book_id,))
+                # Get categories for this book
+                cursor.execute(
+                    """
+                    SELECT categories.name
+                    FROM categories
+                    JOIN book_categories ON categories.id = book_categories.category_id
+                    WHERE book_categories.book_id = ?
+                    """,
+                    (book['id'],)
+                )
                 
-                categories = [row[0] for row in cursor.fetchall()]
-                
-                book = {
-                    'id': book_id,
-                    'title': book_data[1],
-                    'author': book_data[2],
-                    'file_path': book_data[3],
-                    'date_added': book_data[4],
-                    'categories': categories
-                }
-                
+                book['categories'] = [row['name'] for row in cursor.fetchall()]
                 books.append(book)
             
             return books
-            
+        
         finally:
             conn.close()
     
@@ -339,69 +360,66 @@ class BookManager:
             A list of dictionaries with book details
         """
         conn = get_connection()
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
         try:
-            params = []
-            sql = '''
-                SELECT DISTINCT b.id, b.title, b.author, b.file_path, b.date_added
-                FROM books b
-            '''
+            # Base query
+            base_query = """
+            SELECT DISTINCT books.id, books.title, books.author, books.file_path, books.created_at
+            FROM books
+            """
             
-            # If filtering by category, join with the category tables
+            # Add category join if needed
             if category:
-                sql += '''
-                    JOIN book_categories bc ON b.id = bc.book_id
-                    JOIN categories c ON bc.category_id = c.id
-                    WHERE c.name = ?
-                '''
+                base_query += """
+                JOIN book_categories ON books.id = book_categories.book_id
+                JOIN categories ON book_categories.category_id = categories.id
+                """
+            
+            # Add WHERE clause
+            where_clauses = []
+            params = []
+            
+            if query:
+                where_clauses.append("(books.title LIKE ? OR books.author LIKE ?)")
+                params.extend([f"%{query}%", f"%{query}%"])
+            
+            if category:
+                where_clauses.append("categories.name = ?")
                 params.append(category)
-                
-                # Add search query if provided
-                if query:
-                    sql += '''
-                        AND (b.title LIKE ? OR b.author LIKE ?)
-                    '''
-                    params.extend([f'%{query}%', f'%{query}%'])
             
-            # If only search query provided
-            elif query:
-                sql += '''
-                    WHERE b.title LIKE ? OR b.author LIKE ?
-                '''
-                params.extend([f'%{query}%', f'%{query}%'])
+            if where_clauses:
+                base_query += f" WHERE {' AND '.join(where_clauses)}"
             
-            sql += ' ORDER BY b.date_added DESC'
+            # Add order by
+            base_query += " ORDER BY books.title"
             
-            cursor.execute(sql, params)
+            # Execute query
+            cursor.execute(base_query, params)
+            book_rows = cursor.fetchall()
             
+            # Convert rows to dicts and add categories
             books = []
-            for book_data in cursor.fetchall():
-                book_id = book_data[0]
+            for book_row in book_rows:
+                book = dict(book_row)
                 
-                # Get the book's categories
-                cursor.execute('''
-                    SELECT c.name
-                    FROM categories c
-                    JOIN book_categories bc ON c.id = bc.category_id
-                    WHERE bc.book_id = ?
-                ''', (book_id,))
+                # Get categories for this book
+                cursor.execute(
+                    """
+                    SELECT categories.name
+                    FROM categories
+                    JOIN book_categories ON categories.id = book_categories.category_id
+                    WHERE book_categories.book_id = ?
+                    """,
+                    (book['id'],)
+                )
                 
-                categories = [row[0] for row in cursor.fetchall()]
-                
-                book = {
-                    'id': book_id,
-                    'title': book_data[1],
-                    'author': book_data[2],
-                    'file_path': book_data[3],
-                    'date_added': book_data[4],
-                    'categories': categories
-                }
-                
+                book['categories'] = [row['name'] for row in cursor.fetchall()]
                 books.append(book)
             
             return books
-            
+        
         finally:
             conn.close()
     
@@ -416,8 +434,14 @@ class BookManager:
         cursor = conn.cursor()
         
         try:
-            cursor.execute('SELECT name FROM categories ORDER BY name')
-            return [row[0] for row in cursor.fetchall()]
+            cursor.execute(
+                """
+                SELECT name FROM categories
+                ORDER BY name
+                """
+            )
             
+            return [row[0] for row in cursor.fetchall()]
+        
         finally:
             conn.close()

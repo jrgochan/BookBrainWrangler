@@ -1,8 +1,9 @@
-import sqlite3
-import os
+"""
+Database connection module for the application.
+"""
 
-# Database file path
-DB_FILE = "book_manager.db"
+import os
+import sqlite3
 
 def get_connection():
     """
@@ -12,9 +13,19 @@ def get_connection():
     Returns:
         A SQLite connection object
     """
-    conn = sqlite3.connect(DB_FILE)
+    # Get the directory where the database file should be stored
+    db_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Enable foreign key constraints
+    # Create the directory if it doesn't exist
+    os.makedirs(db_dir, exist_ok=True)
+    
+    # Database file path
+    db_path = os.path.join(db_dir, "book_manager.db")
+    
+    # Connect to the database
+    conn = sqlite3.connect(db_path)
+    
+    # Enable foreign key support
     conn.execute("PRAGMA foreign_keys = ON")
     
     return conn
