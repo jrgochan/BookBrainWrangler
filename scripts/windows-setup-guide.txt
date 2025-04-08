@@ -1,0 +1,10 @@
+WINDOWS SETUP GUIDE
+------------------
+
+1. Install Python 3.8+
+2. Install Tesseract OCR
+3. Install JDK for jnius support
+4. Set PATH and JAVA_HOME variables
+5. Create virtual environment
+6. Install dependencies from requirements.txt
+7. Run with: streamlit run app.py

@@ -1,17 +1,25 @@
 #!/bin/bash
+# Helper script for jnius setup
 
-echo "jnius Installation Guide for WSL2 Ubuntu"
-echo "========================================"
-echo ""
-echo "Follow these steps to install jnius:"
-echo ""
-echo "1. Install system dependencies:"
-echo "   (Install Java JDK, build tools, and Python development packages)"
-echo ""
-echo "2. Set JAVA_HOME environment variable"
-echo "   (Find your Java installation path and set it)"
-echo ""
-echo "3. Install Cython, then jnius:"
-echo "   (Install Cython first, then jnius with special flags)"
-echo ""
-echo "For detailed instructions, see README.md"
+echo "===== Jnius Setup Helper ====="
+
+# Check for Java
+if command -v java &>/dev/null; then
+    echo "Found Java installation"
+else
+    echo "Error: Java not found. Please install JDK 8+"
+    exit 1
+fi
+
+# Check for JAVA_HOME
+if [ -z "$JAVA_HOME" ]; then
+    echo "JAVA_HOME not set - this is required for jnius"
+    echo "Please set JAVA_HOME to your JDK installation path"
+else
+    echo "JAVA_HOME is set to: $JAVA_HOME"
+fi
+
+echo "To install jnius:"
+echo "1. First install Cython"
+echo "2. Then install jnius"
+echo "See jnius_installation_guide.txt for details"

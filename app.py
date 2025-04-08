@@ -17,6 +17,8 @@ from pages.book_management import render_book_management_page
 from pages.knowledge_base import render_knowledge_base_page
 from pages.knowledge_base_explorer import render_knowledge_base_explorer_page
 from pages.word_cloud_generator import render_word_cloud_generator_page
+from pages.chat_with_ai import render_chat_with_ai_page
+from pages.settings import render_settings_page
 
 # Configure the Streamlit page
 st.set_page_config(
@@ -115,8 +117,10 @@ def main():
     app_modes = [
         "Book Management",
         "Knowledge Base",
+        "Chat with AI",
         "Knowledge Base Explorer",
         "Word Cloud Generator",
+        "Settings",
     ]
     
     # Render sidebar navigation
@@ -129,11 +133,17 @@ def main():
     elif st.session_state.app_mode == "Knowledge Base":
         render_knowledge_base_page(book_manager, knowledge_base)
     
+    elif st.session_state.app_mode == "Chat with AI":
+        render_chat_with_ai_page(ollama_client, knowledge_base)
+    
     elif st.session_state.app_mode == "Knowledge Base Explorer":
         render_knowledge_base_explorer_page(knowledge_base)
     
     elif st.session_state.app_mode == "Word Cloud Generator":
         render_word_cloud_generator_page(book_manager)
+        
+    elif st.session_state.app_mode == "Settings":
+        render_settings_page(ollama_client)
 
 if __name__ == "__main__":
     main()

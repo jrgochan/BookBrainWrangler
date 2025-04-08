@@ -1,126 +1,121 @@
-# jnius Installation Guide for WSL2 Ubuntu
+# Jnius Installation Guide
 
-This guide provides detailed steps to handle common jnius installation issues in WSL2 Ubuntu environments.
+The `jnius` Python package provides Java integration via JNI but requires specific setup steps that differ by platform. This guide will help you resolve common installation issues.
 
 ## Prerequisites
 
-Ensure you have the following installed:
+1. Install Java Development Kit (JDK) 8 or newer
+2. Set JAVA_HOME environment variable
+3. Install Cython (required to build jnius)
 
-1. **Python 3.11+** (with pip and venv)
-2. **Java JDK**
-3. **Build tools** (gcc, build-essential)
+## Installation Steps by Platform
 
-## Step-by-Step Installation Process
+### Linux/Ubuntu
 
-### 1. Set Up Your Environment
+1. Install JDK and required dependencies:
+   ```bash
+   sudo apt update
+   sudo apt install default-jdk python3-dev
+   sudo apt install build-essential
+   ```
 
-Create and activate a virtual environment:
+2. Set JAVA_HOME:
+   ```bash
+   export JAVA_HOME=/usr/lib/jvm/default-java
+   ```
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
+3. Install Cython first:
+   ```bash
+   pip install Cython
+   ```
+
+4. Install jnius:
+   ```bash
+   pip install jnius
+   ```
+
+### Windows
+
+1. Install JDK from [Oracle](https://www.oracle.com/java/technologies/downloads/) or [OpenJDK](https://adoptium.net/)
+
+2. Add JAVA_HOME to environment variables:
+   - Right-click on "This PC" and select "Properties"
+   - Click "Advanced system settings"
+   - Click "Environment Variables"
+   - Add a new system variable named JAVA_HOME pointing to your JDK installation folder (e.g., C:\Program Files\Java\jdk-17)
+   - Add %JAVA_HOME%\bin to your PATH variable
+
+3. Install Visual C++ Build Tools (required for compiling extensions)
+   - Download from [Microsoft](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+   - Select "Desktop Development with C++" workload during installation
+
+4. Install Cython first:
+   ```
+   pip install Cython
+   ```
+
+5. Install jnius:
+   ```
+   pip install jnius
+   ```
+
+### macOS
+
+1. Install JDK using Homebrew:
+   ```bash
+   brew install openjdk
+   ```
+
+2. Set JAVA_HOME:
+   ```bash
+   export JAVA_HOME=$(/usr/libexec/java_home)
+   ```
+
+3. Install Cython first:
+   ```bash
+   pip install Cython
+   ```
+
+4. Install jnius:
+   ```bash
+   pip install jnius
+   ```
+
+## Common Errors and Solutions
+
+### Error: "You need Cython to compile Pyjnius"
+Solution: Install Cython before attempting to install jnius:
 ```
-
-### 2. Install System Dependencies
-
-Install required system packages:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y default-jdk build-essential python3-dev
-```
-
-### 3. Configure JAVA_HOME
-
-Set the JAVA_HOME environment variable:
-
-```bash
-# Find your Java installation
-java_path=$(readlink -f $(which java) | sed 's:/bin/java::')
-
-# Set JAVA_HOME for current session
-export JAVA_HOME=$java_path
-
-# Optional: Add to .bashrc for persistence
-echo "export JAVA_HOME=$java_path" >> ~/.bashrc
-```
-
-### 4. Install Cython
-
-Cython must be installed before attempting to install jnius:
-
-```bash
 pip install Cython
 ```
 
-### 5. Install jnius
-
-Try different installation methods in this order:
-
-```bash
-# Method 1: Standard installation
+### Error: "No module named 'jnius'"
+Solution: Verify your JAVA_HOME environment variable is set correctly and try reinstalling:
+```
+pip uninstall jnius
 pip install jnius
-
-# If that fails, try Method 2: No binary installation
-pip install --no-binary :all: jnius
-
-# If that fails, try Method 3: With explicit compiler flags
-JAVA_HOME=$java_path CFLAGS="-fPIC" pip install jnius
 ```
 
-## Troubleshooting Common Errors
+### Error: "Java library not found"
+Solution: Ensure JAVA_HOME points to a valid JDK installation and that the java binary is in your PATH.
 
-### ModuleNotFoundError: No module named 'Cython'
+## Alternative: Manual Installation
 
-This error occurs when trying to install jnius without Cython:
-
-```
-error: subprocess-exited-with-error
-× Getting requirements to build wheel did not run successfully.
-│ exit code: 1
-╰─> [output]
-    You need Cython to compile Pyjnius.
-    ModuleNotFoundError: No module named 'Cython'
-```
-
-**Solution**: Install Cython first with `pip install Cython`
-
-### Could not find JVM shared library
-
-```
-OSError: cannot load library 'jvm.dll': error 0x7e
-```
-
-**Solution**: Ensure JAVA_HOME is correctly set:
+If pip installation fails, you can try installing from source:
 
 ```bash
-# Check if Java is installed
-java -version
-
-# Set JAVA_HOME to the correct path
-export JAVA_HOME=/path/to/java
+git clone https://github.com/kivy/pyjnius.git
+cd pyjnius
+pip install Cython
+pip install -e .
 ```
 
-### Build fails with gcc errors
+## Verification
 
+Test your installation by running:
+
+```python
+from jnius import autoclass
+System = autoclass('java.lang.System')
+print(System.getProperty('java.version'))
 ```
-error: command 'gcc' failed with exit status 1
-```
-
-**Solution**: Install build tools and development packages:
-
-```bash
-sudo apt-get install build-essential python3-dev
-```
-
-## Verifying Installation
-
-Test if jnius was installed correctly:
-
-```bash
-python -c 'import jnius; print("jnius installed successfully!")'
-```
-
-## Note
-
-jnius is used for Java integration and may not be required for all functionality of the application. If you continue to face installation issues, you can proceed without it for basic functionality.

@@ -1,0 +1,25 @@
+JNIUS INSTALLATION GUIDE
+
+PREREQUISITES
+------------
+1. Install Java Development Kit (JDK) 8 or newer
+2. Set JAVA_HOME environment variable
+3. Install Cython (required to build jnius)
+
+COMMON ERRORS AND SOLUTIONS
+--------------------------
+Error: "You need Cython to compile Pyjnius"
+Solution: Install Cython first, then jnius
+
+Error: "No module named 'jnius'"
+Solution: Verify JAVA_HOME is set correctly
+
+Error: "Java library not found"
+Solution: Ensure JAVA_HOME points to a valid JDK installation
+
+VERIFICATION
+-----------
+Test your installation with:
+from jnius import autoclass
+System = autoclass('java.lang.System')
+print(System.getProperty('java.version'))

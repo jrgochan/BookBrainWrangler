@@ -1,0 +1,25 @@
+================================================
+WINDOWS SETUP INSTRUCTIONS FOR BOOK KNOWLEDGE AI
+================================================
+
+Prerequisites:
+--------------
+1. Install Python 3.8 or higher from python.org
+2. Install Microsoft Visual C++ Build Tools 
+3. Install Git from git-scm.com
+4. Install Tesseract OCR from github.com/UB-Mannheim/tesseract
+5. Install Poppler for Windows from github.com/oschwartz10612/poppler-windows/releases/
+
+Setup Steps:
+------------
+1. Clone the Repository
+2. Create Virtual Environment:
+   python -m venv venv
+   .\venv\Scripts\Activate.ps1
+3. Set Environment Variables:
+   Add Tesseract and Poppler to your PATH
+4. Start the Application
+
+Troubleshooting:
+---------------
+See the windows-setup-guide.txt file for common issues and their solutions.

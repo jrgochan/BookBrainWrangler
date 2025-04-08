@@ -1,0 +1,44 @@
+# RECOMMENDED REQUIREMENTS - DO NOT INSTALL DIRECTLY
+# This is a reference file. Use your package manager to install these packages
+# with compatible versions to avoid conflicts.
+
+# Core requirements - main functionality
+streamlit>=1.44.1
+pdf2image>=1.17.0
+pypdf2>=3.0.1
+pytesseract>=0.3.13
+requests>=2.32.3
+python-docx>=0.8.11
+
+# Vector database and language model integration
+# Note: chromadb 0.4.18 is used to avoid conflicts with langchain-chroma
+chromadb==0.4.18  # Specific version to avoid conflicts
+langchain>=0.3.23
+langchain-community>=0.3.21
+langchain-text-splitters>=0.3.8
+langchain-chroma==0.1.4  # Compatible with chromadb 0.4.18
+
+# Data visualization and analysis
+matplotlib>=3.7.0
+pandas>=2.0.0
+plotly>=5.13.0
+scikit-learn>=1.2.0
+nltk>=3.8.1
+wordcloud>=1.9.1
+numpy>=1.23.0
+
+# Additional utilities
+attr>=0.3.2
+ConfigParser>=7.2.0
+contextlib2>=21.6.0
+cryptography>=44.0.2
+docutils>=0.21.2
+filelock>=3.18.0
+importlib_metadata>=8.6.1
+ipython>=8.12.3
+ipywidgets>=8.1.5
+Jinja2>=3.1.6
+
+# Optional - install separately if needed
+# jnius - requires additional setup, see jnius_installation_guide.txt
+# sentence-transformers - large download, install only if needed for embeddings

@@ -37,8 +37,16 @@ def render_ai_settings(ollama_client):
     st.header("AI Server Settings")
     
     # Get current Ollama settings
-    current_host = st.session_state.ollama_host
-    current_model = st.session_state.ollama_model
+    if 'ollama_settings' not in st.session_state:
+        st.session_state.ollama_settings = {
+            'model': 'llama2',
+            'server_url': 'http://localhost:11434',
+            'temperature': 0.7,
+            'context_window': 4096,
+        }
+        
+    current_host = st.session_state.ollama_settings['server_url']
+    current_model = st.session_state.ollama_settings['model']
     
     # Connection status
     connection_status = ollama_client.check_connection()

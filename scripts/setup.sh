@@ -1,61 +1,31 @@
 #!/bin/bash
+# Minimal setup script for Book Knowledge AI on Linux
 
-# Book Knowledge AI Setup Script
-echo "Setting up Book Knowledge AI..."
+echo "Book Knowledge AI Setup"
+echo "======================="
 
-# Create and activate a virtual environment
-echo "Creating Python virtual environment..."
-python3 -m venv venv
-source venv/bin/activate
-
-# Upgrade pip
-echo "Upgrading pip..."
-pip install --upgrade pip
-
-# Install required system dependencies for tesseract OCR
-echo "Installing system dependencies..."
-sudo apt-get update
-sudo apt-get install -y tesseract-ocr libtesseract-dev poppler-utils
-
-# Install Python dependencies
-echo "Installing Python packages..."
-pip install -r requirements.txt
-
-# Check if requirements.txt exists, if not, create it
-if [ ! -f requirements.txt ]; then
-    echo "Creating requirements.txt..."
-    pip install pipreqs
-    pipreqs . --force
-fi
-
-# Create .streamlit directory if it doesn't exist
-if [ ! -d .streamlit ]; then
-    echo "Creating .streamlit directory..."
-    mkdir -p .streamlit
-fi
-
-# Create config.toml if it doesn't exist
-if [ ! -f .streamlit/config.toml ]; then
-    echo "Creating .streamlit/config.toml..."
-    cat > .streamlit/config.toml << EOL
-[server]
-headless = false
-port = 8501
-address = "localhost"
-EOL
-fi
-
-# Check if Ollama is installed
-echo "Checking if Ollama is installed..."
-if ! command -v ollama &> /dev/null; then
-    echo "Ollama is not installed. Please install it manually:"
-    echo "curl -fsSL https://ollama.com/install.sh | sh"
-    echo "Then run 'ollama serve' to start the Ollama service."
-    echo "In a new terminal, run 'ollama pull llama2' to download the default model."
+# Check for Python
+if command -v python3 &>/dev/null; then
+    echo "[✓] Python: $(python3 --version)"
 else
-    echo "Ollama is already installed."
-    echo "Ensure Ollama is running with: ollama serve"
+    echo "[✗] Python 3 not found. Please install Python 3.8+"
 fi
 
-echo "Setup completed successfully!"
-echo "You can now run the application with: ./scripts/start.sh"
+# Check for Tesseract
+if command -v tesseract &>/dev/null; then
+    echo "[✓] Tesseract: $(tesseract --version | head -n 1)"
+else
+    echo "[✗] Tesseract not found. Install with package manager"
+fi
+
+# Check for virtual environment
+if [ -d "venv" ]; then
+    echo "[✓] Virtual environment exists"
+else
+    echo "[i] Create virtual environment with: python3 -m venv venv"
+fi
+
+echo ""
+echo "Quick Start:"
+echo "1. Activate: source venv/bin/activate"
+echo "2. Run: streamlit run app.py"
