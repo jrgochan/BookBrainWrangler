@@ -7,6 +7,7 @@ import tempfile
 import importlib.util
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import FakeEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from database import get_connection
 
 # Try to import Chroma from langchain_chroma (new package)
@@ -34,9 +35,18 @@ class KnowledgeBase:
             chunk_overlap=200
         )
         
-        # Initialize with a simple embedding model for demonstration
-        # In a production environment, you would use a proper embedding model
-        self.embeddings = FakeEmbeddings(size=768)
+        # Try to use HuggingFaceEmbeddings, fall back to FakeEmbeddings if not available
+        try:
+            # Use all-MiniLM-L6-v2 model which is small but performs well for semantic search
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name="all-MiniLM-L6-v2",
+                cache_folder=self.data_dir
+            )
+            print("Using HuggingFaceEmbeddings with all-MiniLM-L6-v2 model")
+        except Exception as e:
+            print(f"Could not initialize HuggingFaceEmbeddings: {e}")
+            print("Falling back to FakeEmbeddings - NOTE: This will not provide meaningful search results!")
+            self.embeddings = FakeEmbeddings(size=384)
         
         # Initialize the vector store with safety checks
         chroma_dir = os.path.join(self.data_dir, "chroma_db")
@@ -502,12 +512,56 @@ class KnowledgeBase:
             # Query the vector store for similar documents
             docs = self.vector_store.similarity_search(query, k=num_results)
             
-            # Combine the text from the results
+            # Get book titles for the retrieved chunks to provide better context
             if docs:
-                return "\n\n".join([doc.page_content for doc in docs])
+                conn = get_connection()
+                cursor = conn.cursor()
+                
+                # Prepare formatted context with book information
+                formatted_chunks = []
+                
+                for i, doc in enumerate(docs):
+                    # Get the book ID from the document metadata
+                    try:
+                        book_id = doc.metadata.get("book_id")
+                        
+                        # Look up the book title and author
+                        if book_id:
+                            cursor.execute('''
+                                SELECT title, author 
+                                FROM books 
+                                WHERE id = ?
+                            ''', (book_id,))
+                            
+                            book_info = cursor.fetchone()
+                            
+                            if book_info:
+                                title, author = book_info
+                                formatted_chunks.append(
+                                    f"--- EXCERPT {i+1} (from '{title}' by {author}) ---\n"
+                                    f"{doc.page_content}\n"
+                                )
+                            else:
+                                # Fallback if book info not found
+                                formatted_chunks.append(
+                                    f"--- EXCERPT {i+1} ---\n"
+                                    f"{doc.page_content}\n"
+                                )
+                        else:
+                            # No book_id in metadata
+                            formatted_chunks.append(
+                                f"--- EXCERPT {i+1} ---\n"
+                                f"{doc.page_content}\n"
+                            )
+                    except Exception as e:
+                        print(f"Error formatting context chunk: {e}")
+                        # Add the raw chunk if there's an error
+                        formatted_chunks.append(doc.page_content)
+                
+                conn.close()
+                return "\n\n".join(formatted_chunks)
             else:
                 return "No relevant information found in the knowledge base."
-                
         except Exception as e:
             print(f"Error retrieving context: {e}")
-            return "Error retrieving information from the knowledge base."
+            return f"Error retrieving context from knowledge base: {str(e)}"

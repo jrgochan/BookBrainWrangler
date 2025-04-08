@@ -53,20 +53,40 @@ class OllamaClient:
         model = model or self.default_model
         try:
             # Prepare the prompt with context if provided
-            system_prompt = "You are a helpful AI assistant with knowledge from various books."
+            system_prompt = (
+                "You are a helpful AI assistant with knowledge from various books. "
+                "You provide thoughtful, accurate responses based on the book content provided. "
+                "If asked about topics outside the provided book context, you should inform the user "
+                "that you can only answer based on the books in your knowledge base."
+            )
             
             if context:
-                system_prompt += " Use the following information from books to inform your answer, but respond in a conversational manner without directly quoting the context unless explicitly asked."
-                full_prompt = f"{prompt}\n\nRelevant information from books:\n{context}"
+                system_prompt += (
+                    " Use the following excerpts from books to inform your answer. "
+                    "Respond in a conversational manner. You should cite which book an idea comes from "
+                    "when directly answering with information from the books. "
+                    "If the provided context doesn't contain relevant information to answer the question, "
+                    "acknowledge this limitation."
+                )
+                full_prompt = f"{prompt}\n\n### BOOK EXCERPTS ###\n{context}"
             else:
                 full_prompt = prompt
+                system_prompt += (
+                    " No book excerpts were found for this query. Inform the user that you don't have "
+                    "relevant information from any books to answer their question. Suggest they try a "
+                    "different question or ensure books are properly added to the knowledge base."
+                )
             
             # Prepare the request payload
             payload = {
                 "model": model,
                 "prompt": full_prompt,
                 "system": system_prompt,
-                "stream": False  # We want the complete response at once
+                "stream": False,  # We want the complete response at once
+                # Add parameters that may improve response quality
+                "temperature": 0.7,      # Control randomness (higher = more creative)
+                "top_p": 0.9,            # Nucleus sampling (diversity control)
+                "top_k": 40              # Limit vocabulary options to top k
             }
             
             # Send the request

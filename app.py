@@ -482,12 +482,42 @@ elif app_mode == "Chat with AI":
         st.warning("Your AI doesn't have any knowledge yet! Please add books to the knowledge base first.")
         st.stop()
     
+    # Initialize debug mode in session state if not present
+    if 'debug_mode' not in st.session_state:
+        st.session_state.debug_mode = False
+    
+    # Add a debug toggle in the sidebar
+    with st.sidebar:
+        st.write("### Chat Settings")
+        st.session_state.debug_mode = st.toggle("Show retrieved context", st.session_state.debug_mode)
+    
+    # Get book titles for books in KB
+    conn = get_connection()
+    cursor = conn.cursor()
+    books_in_kb = []
+    for book_id in kb_book_ids:
+        cursor.execute('SELECT title, author FROM books WHERE id = ?', (book_id,))
+        result = cursor.fetchone()
+        if result:
+            title, author = result
+            books_in_kb.append(f"• {title} by {author}")
+    conn.close()
+    
+    # Display books in knowledge base
+    with st.expander("Books in Knowledge Base", expanded=False):
+        if books_in_kb:
+            st.markdown("\n".join(books_in_kb))
+        else:
+            st.warning("Books are in knowledge base but titles could not be retrieved.")
+    
     # Display chat history
     for message in st.session_state.chat_history:
         if message["role"] == "user":
             st.chat_message("user").write(message["content"])
-        else:
+        elif message["role"] == "assistant":
             st.chat_message("assistant").write(message["content"])
+        elif message["role"] == "system" and st.session_state.debug_mode:
+            st.chat_message("system").write(message["content"])
     
     # Chat input
     if prompt := st.chat_input("Ask about your books..."):
@@ -497,7 +527,15 @@ elif app_mode == "Chat with AI":
         
         # Generate AI response with context from knowledge base
         with st.spinner(f"Thinking with {st.session_state.ollama_model}..."):
+            # Retrieve context from knowledge base
             context = knowledge_base.retrieve_relevant_context(prompt)
+            
+            # In debug mode, show the retrieved context
+            if st.session_state.debug_mode:
+                st.session_state.chat_history.append({"role": "system", "content": f"**Retrieved Context:**\n\n{context}"})
+                st.chat_message("system").write(f"**Retrieved Context:**\n\n{context}")
+            
+            # Generate response
             response = ollama_client.generate_response(prompt, context)
         
         # Add AI response to chat history
