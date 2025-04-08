@@ -1,0 +1,125 @@
+    app
+    book management
+    chat with ai
+    init
+    knowledge base
+    knowledge base explorer
+    settings
+    word cloud generator
+
+📚 Book Knowledge AI
+Navigation
+About
+
+Book Knowledge AI transforms your documents into an interactive, searchable knowledge base.
+
+Upload books, documents, and research papers to extract knowledge and chat with your documents using AI.
+
+v1.0.0 | Built with Streamlit
+Book Knowledge AI Settings
+AI Server Settings
+
+✓ Connected to Ollama server at http://localhost:11434
+Available Models
+
+gemma3:4b
+
+gemma3:27b
+
+gemma3:12b
+
+Active
+
+gemma3:1b
+
+qwq:32b
+
+yi-coder:9b
+
+openthinker:32b
+
+qwen2.5-coder:32b
+
+llama3.3:70b
+
+hermes3:70b
+
+qwen2.5-coder:1.5b-base
+
+hermes3:8b
+
+hermes3:3b
+
+solar-pro:22b
+
+starcoder:15b
+
+starcoder:7b
+
+llava:34b
+
+llava:13b
+
+opencoder:1.5b
+
+opencoder:8b
+
+wizard-math:13b
+
+wizard-math:7b
+
+stable-code:3b
+
+starcoder2:3b
+
+codestral:22b
+
+command-r:35b
+
+mistral-nemo:12b
+
+tinyllama:1.1b
+
+llava:7b
+
+dolphin3:latest
+
+gemma2:27b
+
+phi4:14b
+
+llama3:latest
+
+qwen:latest
+Server Configuration
+
+Ollama API Host
+
+Default Model
+
+streamlit.errors.StreamlitAPIException: Slider value arguments must be of matching types. min_value has int type. max_value has int type. step has float type.
+Traceback:
+
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 121, in exec_func_with_error_handling
+    result = func()
+             ^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 640, in code_to_exec
+    exec(code, module.__dict__)
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/app.py", line 149, in <module>
+    main()
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/app.py", line 146, in main
+    render_settings_page(ollama_client)
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/pages/settings.py", line 25, in render_settings_page
+    render_ocr_settings()
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/pages/settings.py", line 151, in render_ocr_settings
+    confidence_threshold = st.slider(
+                           ^^^^^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/runtime/metrics_util.py", line 410, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/elements/widgets/slider.py", line 531, in slider
+    return self._slider(
+           ^^^^^^^^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/elements/widgets/slider.py", line 729, in _slider
+    raise StreamlitAPIException(
+
