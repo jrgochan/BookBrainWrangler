@@ -13,7 +13,16 @@ def initialize_components():
     book_manager = BookManager()
     document_processor = DocumentProcessor()
     knowledge_base = KnowledgeBase()
-    ollama_client = OllamaClient()
+    
+    # Initialize Ollama client with settings from session state if available
+    if 'ollama_host' in st.session_state and 'ollama_model' in st.session_state:
+        ollama_client = OllamaClient(
+            host=st.session_state.ollama_host,
+            model=st.session_state.ollama_model
+        )
+    else:
+        ollama_client = OllamaClient()
+        
     return book_manager, document_processor, knowledge_base, ollama_client
 
 # Set up the page
@@ -33,6 +42,12 @@ if 'search_query' not in st.session_state:
     st.session_state.search_query = ""
 if 'filter_category' not in st.session_state:
     st.session_state.filter_category = "All"
+    
+# Ollama settings
+if 'ollama_host' not in st.session_state:
+    st.session_state.ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+if 'ollama_model' not in st.session_state:
+    st.session_state.ollama_model = os.environ.get("OLLAMA_MODEL", "llama2")
 
 # Initialize components
 book_manager, document_processor, knowledge_base, ollama_client = initialize_components()
@@ -41,7 +56,7 @@ book_manager, document_processor, knowledge_base, ollama_client = initialize_com
 st.sidebar.title("Book Knowledge AI")
 app_mode = st.sidebar.selectbox(
     "Select Mode",
-    ["Book Management", "Knowledge Base", "Chat with AI"]
+    ["Book Management", "Knowledge Base", "Chat with AI", "Settings"]
 )
 
 # Book Management section
@@ -410,13 +425,110 @@ elif app_mode == "Chat with AI":
         st.chat_message("user").write(prompt)
         
         # Generate AI response with context from knowledge base
-        with st.spinner("Thinking..."):
+        with st.spinner(f"Thinking with {st.session_state.ollama_model}..."):
             context = knowledge_base.retrieve_relevant_context(prompt)
             response = ollama_client.generate_response(prompt, context)
         
         # Add AI response to chat history
         st.session_state.chat_history.append({"role": "assistant", "content": response})
         st.chat_message("assistant").write(response)
+
+# Settings page
+elif app_mode == "Settings":
+    st.title("Settings")
+    
+    # Ollama Settings Section
+    st.header("Ollama AI Settings")
+    
+    # Connection Status
+    connection_status = ollama_client.check_connection()
+    if connection_status:
+        st.success("✅ Connected to Ollama server")
+    else:
+        st.error("❌ Not connected to Ollama server. Please check that Ollama is running.")
+    
+    # Host settings
+    ollama_host = st.text_input("Ollama Host URL", value=st.session_state.ollama_host)
+    
+    # Model selection
+    st.subheader("AI Model Selection")
+    
+    # Get available models
+    available_models = []
+    model_details = {}
+    
+    if connection_status:
+        with st.spinner("Loading available models..."):
+            available_models = ollama_client.list_models()
+            
+            if available_models:
+                st.success(f"Found {len(available_models)} available models")
+                # Create a dictionary of model names for the selectbox
+                model_options = [model.get("name", "unknown") for model in available_models]
+                
+                # Get the current index if the current model is in the list
+                current_index = 0
+                if st.session_state.ollama_model in model_options:
+                    current_index = model_options.index(st.session_state.ollama_model)
+                
+                # Model selection dropdown
+                selected_model = st.selectbox(
+                    "Select AI Model", 
+                    options=model_options,
+                    index=current_index
+                )
+                
+                # Get and display model details
+                if st.button("Show Model Details"):
+                    with st.spinner(f"Loading details for {selected_model}..."):
+                        model_details = ollama_client.get_model_details(selected_model)
+                        if model_details:
+                            st.subheader(f"{selected_model} Details")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write(f"**Model:** {model_details.get('model', 'unknown')}")
+                                st.write(f"**Size:** {model_details.get('size', 'unknown')}")
+                            with col2:
+                                st.write(f"**Modified:** {model_details.get('modified_at', 'unknown')}")
+                                st.write(f"**Format:** {model_details.get('format', 'unknown')}")
+                        else:
+                            st.warning(f"Could not retrieve details for {selected_model}")
+                
+                # Save button for settings
+                if st.button("Save Settings"):
+                    # Update the ollama client and session state
+                    update_success = ollama_client.update_settings(
+                        host=ollama_host,
+                        model=selected_model
+                    )
+                    
+                    if update_success:
+                        st.session_state.ollama_host = ollama_host
+                        st.session_state.ollama_model = selected_model
+                        st.success("Settings saved successfully!")
+                    else:
+                        st.error("Could not connect to the specified Ollama host. Settings not saved.")
+            else:
+                st.warning("No models found. Make sure Ollama is running and you have models installed.")
+                st.info("You can install models with the Ollama CLI: `ollama pull llama2`")
+    else:
+        st.info("Connect to Ollama server to view available models.")
+        # Save button for just the host
+        if st.button("Save Host Settings"):
+            # Try connecting to the new host
+            old_host = ollama_client.host
+            ollama_client.host = ollama_host
+            ollama_client.api_endpoint = f"{ollama_host}/api"
+            
+            if ollama_client.check_connection():
+                st.session_state.ollama_host = ollama_host
+                st.success("Host settings saved successfully!")
+                st.rerun()  # Refresh to show models
+            else:
+                # Revert to the old host
+                ollama_client.host = old_host
+                ollama_client.api_endpoint = f"{old_host}/api"
+                st.error("Could not connect to the specified Ollama host. Settings not saved.")
 
 # Footer
 st.sidebar.markdown("---")
