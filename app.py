@@ -6,7 +6,13 @@ from document_processor import DocumentProcessor
 from knowledge_base import KnowledgeBase
 from ollama_client import OllamaClient
 from database import get_connection
-from utils import cleanup_text, generate_thumbnail, generate_placeholder_thumbnail
+from utils import (
+    cleanup_text, 
+    generate_thumbnail, 
+    generate_placeholder_thumbnail, 
+    generate_knowledge_export, 
+    save_markdown_to_file
+)
 
 # Initialize the components
 @st.cache_resource
@@ -618,10 +624,76 @@ elif app_mode == "Chat with AI":
     if 'debug_mode' not in st.session_state:
         st.session_state.debug_mode = False
     
-    # Add a debug toggle in the sidebar
+    # Add a debug toggle and export options in the sidebar
     with st.sidebar:
         st.write("### Chat Settings")
         st.session_state.debug_mode = st.toggle("Show retrieved context", st.session_state.debug_mode)
+        
+        # Add Knowledge Export section
+        st.write("### Knowledge Export")
+        export_container = st.container()
+        
+        with export_container:
+            # Export options
+            export_type = st.radio(
+                "Export type:", 
+                ["Topic-based", "Query-based", "All books"],
+                help="Topic-based: Organize by book categories. Query-based: Focus on a specific query. All books: Include excerpts from all books."
+            )
+            
+            if export_type == "Query-based":
+                export_query = st.text_input(
+                    "Export query:", 
+                    placeholder="Enter a topic or question",
+                    help="The export will focus on this specific topic or question"
+                )
+            else:
+                export_query = None
+                
+            # Advanced export options in an expander
+            with st.expander("Advanced export options"):
+                include_content = st.checkbox("Include book excerpts", value=True)
+                max_topics = st.slider("Max topics/categories", 1, 10, 5)
+                
+                max_books_option = st.checkbox("Limit number of books", value=False)
+                max_books = None
+                if max_books_option:
+                    max_books = st.slider("Max books to include", 1, len(kb_book_ids), min(5, len(kb_book_ids)))
+            
+            # Export button
+            if st.button("📄 Export to Markdown"):
+                with st.spinner("Generating knowledge export..."):
+                    # Generate the markdown content
+                    markdown_content = generate_knowledge_export(
+                        book_manager=book_manager,
+                        knowledge_base=knowledge_base,
+                        query=export_query if export_type == "Query-based" else None,
+                        include_content=(export_type == "All books") or include_content,
+                        max_topics=max_topics,
+                        max_books=max_books
+                    )
+                    
+                    # Save to file
+                    file_path = save_markdown_to_file(markdown_content)
+                    
+                    if file_path:
+                        # Create a download link
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            file_content = f.read()
+                        
+                        st.success(f"Export generated successfully!")
+                        st.download_button(
+                            label="Download Markdown File",
+                            data=file_content,
+                            file_name=os.path.basename(file_path),
+                            mime="text/markdown"
+                        )
+                        
+                        # Preview the content
+                        with st.expander("Preview Export", expanded=True):
+                            st.markdown(markdown_content)
+                    else:
+                        st.error("Failed to generate export file")
     
     # Get book titles for books in KB
     conn = get_connection()
