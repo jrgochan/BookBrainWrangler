@@ -1,15 +1,26 @@
 # Core requirements
-chromadb>=1.0.3
+chromadb==0.4.18  # Specific version to avoid conflicts
 langchain>=0.3.23
 langchain-community>=0.3.21
 langchain-text-splitters>=0.3.8
+langchain-chroma==0.1.4  # Compatible with chromadb 0.4.18
+loguru>=0.7.2  # Robust, simple logging
 pdf2image>=1.17.0
 pypdf2>=3.0.1
 pytesseract>=0.3.13
 requests>=2.32.3
 streamlit>=1.44.1
 
-# Additional dependencies from your project
+# Data visualization and analysis
+matplotlib>=3.7.0
+pandas>=2.0.0
+plotly>=5.13.0
+scikit-learn>=1.2.0
+nltk>=3.8.1
+wordcloud>=1.9.1
+numpy>=1.23.0
+
+# Additional dependencies
 attr>=0.3.2
 ConfigParser>=7.2.0
 contextlib2>=21.6.0
@@ -20,48 +31,7 @@ importlib_metadata>=8.6.1
 ipython>=8.12.3
 ipywidgets>=8.1.5
 Jinja2>=3.1.6
-# Note: jnius is optional and installed separately
-python-docx
-docx
-langchain-chroma
+python-docx>=0.8.11
+
+# Optional - install if needed
 sentence-transformers
-matplotlib
-pandas
-plotly
-scikit-learn
-nltk
-wordcloud
-matplotlib
-nltk
-pandas
-plotly
-scikit-learn
-wordcloud
-matplotlib
-nltk
-numpy
-pandas
-plotly
-scikit-learn
-streamlit
-chromadb
-langchain
-langchain-community
-langchain-text-splitters
-pdf2image
-pypdf2
-pytesseract
-wordcloud
-python-docx
-matplotlib
-nltk
-numpy
-pandas
-pdf2image
-plotly
-pypdf2
-pytesseract
-python-docx
-scikit-learn
-streamlit
-wordcloud

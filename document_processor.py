@@ -15,6 +15,11 @@ from pdf2image import convert_from_path
 import docx
 from PIL import Image
 
+from utils.logger import get_logger
+
+# Get a logger for this module
+logger = get_logger(__name__)
+
 class DocumentProcessor:
     def __init__(self):
         """Initialize the document processor with default settings."""
@@ -168,7 +173,7 @@ class DocumentProcessor:
                                         'action': 'extracting'
                                     })
                     except Exception as e:
-                        print(f"OCR processing error on page {i+1}: {str(e)}")
+                        logger.error(f"OCR processing error on page {i+1}: {str(e)}")
                         # If OCR fails, use whatever text we could extract directly
                         if progress_callback:
                             send_progress(i, total_pages, {
@@ -199,7 +204,7 @@ class DocumentProcessor:
                                 })
                         except Exception as e:
                             # If image conversion fails, just report the text
-                            print(f"Image conversion error on page {i+1}: {str(e)}")
+                            logger.error(f"Image conversion error on page {i+1}: {str(e)}")
                             send_progress(i, total_pages, {
                                 'text': progress_text,
                                 'ocr_text': extracted_text,
@@ -315,14 +320,14 @@ class DocumentProcessor:
                                 'action': 'extracting'
                             })
                     except Exception as e:
-                        print(f"Error processing image {i+1}: {str(e)}")
+                        logger.error(f"Error processing image {i+1}: {str(e)}")
             
             # Final progress update
             send_progress(total_elements, total_elements, {'text': "DOCX processing complete", 'action': 'completed'})
             
         except Exception as e:
             error_msg = f"Error processing DOCX file: {str(e)}"
-            print(error_msg)
+            logger.error(error_msg)
             if progress_callback:
                 send_progress(0, 1, {'text': error_msg, 'action': 'error'})
         
@@ -361,7 +366,7 @@ class DocumentProcessor:
                 else:
                     content = extracted
             except Exception as e:
-                print(f"Error extracting content for metadata: {e}")
+                logger.error(f"Error extracting content for metadata: {e}")
                 return metadata
         
         # Process content to extract metadata
@@ -432,5 +437,5 @@ class DocumentProcessor:
                 pdf_reader = PyPDF2.PdfReader(file)
                 return len(pdf_reader.pages)
         except Exception as e:
-            print(f"Error getting page count: {str(e)}")
+            logger.error(f"Error getting page count: {str(e)}")
             return 0
