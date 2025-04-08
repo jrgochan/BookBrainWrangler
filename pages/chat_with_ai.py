@@ -44,8 +44,15 @@ def render_chat_with_ai_page(ollama_client, knowledge_base):
     # Display available models
     st.sidebar.header("AI Configuration")
     
-    # Check loaded model
-    current_model = st.session_state.ollama_model
+    # Check loaded model - initialize settings if needed
+    if 'ollama_settings' not in st.session_state:
+        st.session_state.ollama_settings = {
+            'model': 'llama2',  # Default model
+            'server_url': 'http://localhost:11434',
+            'temperature': 0.7,
+            'context_window': 4096,
+        }
+    current_model = st.session_state.ollama_settings['model']
     model_info = ollama_client.get_model_details(current_model)
     
     if model_info:
@@ -116,10 +123,12 @@ def render_chat_with_ai_page(ollama_client, knowledge_base):
             
             # Generate AI response
             try:
+                # Ensure we're using the correct model
+                model_to_use = st.session_state.ollama_settings.get('model', 'llama2')
                 ai_response = ollama_client.generate_response(
                     prompt=user_query,
                     context=context,
-                    model=current_model
+                    model=model_to_use
                 )
                 
                 # Replace typing indicator with actual response
