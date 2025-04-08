@@ -1,0 +1,166 @@
+# BookBrainSync Specific
+knowledge_base_data/
+*/knowledge_base_data/
+*.db
+book_manager.db
+sqlite*.db
+temp_*
+knowledge_export_*.md
+# Extracted books or temporary files
+temp_*.pdf
+temp_*.docx
+
+# Python and Virtual Environment
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.env.local
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*
+.python-version
+
+# Large files
+*.pdf
+*.docx
+*.epub
+*.mobi
+*.zip
+*.rar
+*.7z
+*.tar.gz
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+.DS_Store
+.idea_modules/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/
+atlassian-ide-plugin.xml
+
+# Environments
+.env
+.env.local
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# AI and ML related
+.vector_cache/
+*.ckpt
+*.pt
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*/cache/*
+.cache/
+cache/
+vector_store/
+vector_cache/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# NLP and text processing
+.vector_cache/
+embeddings/
+models/
+checkpoints/
+
+# OCR and image related
+.DS_Store
+*/.DS_Store
+*/._*
+Thumbs.db
+.Trashes
+._*
+
+# Logs
+logs/
+*.log
+*.out
+*.err
+nohup.out
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
