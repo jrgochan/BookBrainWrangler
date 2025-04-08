@@ -3,18 +3,53 @@ import pytesseract
 from pdf2image import convert_from_path
 import os
 import tempfile
+import docx
+import mimetypes
 
-class PDFProcessor:
+class DocumentProcessor:
     def __init__(self):
-        """Initialize the PDF processor with default settings."""
+        """Initialize the document processor with default settings."""
         # Configure pytesseract path if needed
         # pytesseract.pytesseract.tesseract_cmd = r'/usr/bin/tesseract'  # Uncomment and modify if needed
-        pass
+        
+        # Register the DOCX MIME type if it's not already registered
+        if not mimetypes.inited:
+            mimetypes.init()
+        if '.docx' not in mimetypes.types_map:
+            mimetypes.add_type('application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx')
     
-    def extract_text(self, pdf_path, progress_callback=None):
+    def extract_text(self, file_path, progress_callback=None):
         """
-        Extract text from a PDF file.
-        First tries direct text extraction, then falls back to OCR if needed.
+        Extract text from a document file (PDF or DOCX).
+        For PDFs: First tries direct text extraction, then falls back to OCR if needed.
+        For DOCX: Uses python-docx to extract text.
+        
+        Args:
+            file_path: Path to the document file
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Extracted text as a string
+        """
+        # Determine file type based on extension
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        if progress_callback:
+            progress_callback(0, 1, f"Detected file type: {file_ext}")
+        
+        # Process based on file type
+        if file_ext == '.pdf':
+            return self._process_pdf(file_path, progress_callback)
+        elif file_ext == '.docx':
+            return self._process_docx(file_path, progress_callback)
+        else:
+            if progress_callback:
+                progress_callback(0, 1, f"Unsupported file type: {file_ext}")
+            raise ValueError(f"Unsupported file type: {file_ext}. Only PDF and DOCX files are supported.")
+    
+    def _process_pdf(self, pdf_path, progress_callback=None):
+        """
+        Process a PDF file and extract text.
         
         Args:
             pdf_path: Path to the PDF file
@@ -28,7 +63,7 @@ class PDFProcessor:
         
         # Update progress
         if progress_callback:
-            progress_callback(0, total_pages, "Starting text extraction")
+            progress_callback(0, total_pages, "Starting PDF text extraction")
         
         # First try direct text extraction
         if progress_callback:
@@ -48,6 +83,63 @@ class PDFProcessor:
             progress_callback(total_pages, total_pages, "Text extraction complete")
         
         return extracted_text
+        
+    def _process_docx(self, docx_path, progress_callback=None):
+        """
+        Process a DOCX file and extract text.
+        
+        Args:
+            docx_path: Path to the DOCX file
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Extracted text as a string
+        """
+        if progress_callback:
+            progress_callback(0, 3, "Opening DOCX document")
+            
+        try:
+            # Open the docx file
+            doc = docx.Document(docx_path)
+            
+            if progress_callback:
+                progress_callback(1, 3, f"Processing DOCX with {len(doc.paragraphs)} paragraphs")
+            
+            # Extract text from paragraphs
+            full_text = []
+            for i, para in enumerate(doc.paragraphs):
+                if para.text:
+                    full_text.append(para.text)
+                
+                # Update progress periodically (every 10 paragraphs)
+                if progress_callback and i % 10 == 0 and len(doc.paragraphs) > 0:
+                    progress = min(1 + (i / len(doc.paragraphs)), 2)
+                    progress_callback(progress, 3, f"Processed {i}/{len(doc.paragraphs)} paragraphs")
+            
+            if progress_callback:
+                progress_callback(2, 3, "Processing tables")
+            
+            # Extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        if cell.text:
+                            row_text.append(cell.text)
+                    if row_text:
+                        full_text.append(" | ".join(row_text))
+            
+            # Final progress update
+            if progress_callback:
+                progress_callback(3, 3, "DOCX text extraction complete")
+                
+            return "\n".join(full_text)
+            
+        except Exception as e:
+            print(f"Error extracting text from DOCX: {e}")
+            if progress_callback:
+                progress_callback(0, 3, f"Error in DOCX processing: {e}")
+            return ""
     
     def _extract_text_direct(self, pdf_path, progress_callback=None):
         """

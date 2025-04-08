@@ -2,7 +2,7 @@ import streamlit as st
 import os
 import time
 from book_manager import BookManager
-from pdf_processor import PDFProcessor
+from document_processor import DocumentProcessor
 from knowledge_base import KnowledgeBase
 from ollama_client import OllamaClient
 from utils import cleanup_text
@@ -11,10 +11,10 @@ from utils import cleanup_text
 @st.cache_resource
 def initialize_components():
     book_manager = BookManager()
-    pdf_processor = PDFProcessor()
+    document_processor = DocumentProcessor()
     knowledge_base = KnowledgeBase()
     ollama_client = OllamaClient()
-    return book_manager, pdf_processor, knowledge_base, ollama_client
+    return book_manager, document_processor, knowledge_base, ollama_client
 
 # Set up the page
 st.set_page_config(
@@ -35,7 +35,7 @@ if 'filter_category' not in st.session_state:
     st.session_state.filter_category = "All"
 
 # Initialize components
-book_manager, pdf_processor, knowledge_base, ollama_client = initialize_components()
+book_manager, document_processor, knowledge_base, ollama_client = initialize_components()
 
 # Sidebar for application navigation
 st.sidebar.title("Book Knowledge AI")
@@ -50,7 +50,7 @@ if app_mode == "Book Management":
     
     # Upload new book
     st.header("Upload New Book")
-    uploaded_file = st.file_uploader("Upload a PDF file from your CZUR ET24 Pro scanner", type="pdf")
+    uploaded_file = st.file_uploader("Upload a PDF or DOCX file from your CZUR ET24 Pro scanner or other sources", type=["pdf", "docx"])
     
     col1, col2 = st.columns(2)
     with col1:
@@ -67,14 +67,21 @@ if app_mode == "Book Management":
         info_container = st.container()
         
         # Save the uploaded file temporarily
-        temp_path = f"temp_{int(time.time())}.pdf"
+        file_ext = os.path.splitext(uploaded_file.name)[1].lower()
+        temp_path = f"temp_{int(time.time())}{file_ext}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         
         try:
             # Initialize processing stage info
+            file_ext = os.path.splitext(temp_path)[1].lower()
             with info_container:
-                st.info("Initializing PDF processing...")
+                if file_ext == '.pdf':
+                    st.info("Initializing PDF processing...")
+                elif file_ext == '.docx':
+                    st.info("Initializing DOCX processing...")
+                else:
+                    st.info(f"Initializing document processing for {file_ext}...")
             
             # Define progress callback function
             def update_progress(current, total, message):
@@ -87,14 +94,16 @@ if app_mode == "Book Management":
                 with info_container:
                     st.info(message)
             
-            # Display initial page count
-            page_count = pdf_processor.get_page_count(temp_path)
-            with info_container:
-                st.info(f"PDF has {page_count} pages to process")
+            # Display initial page count for PDFs
+            file_ext = os.path.splitext(temp_path)[1].lower()
+            if file_ext == '.pdf':
+                page_count = document_processor.get_page_count(temp_path)
+                with info_container:
+                    st.info(f"PDF has {page_count} pages to process")
             
-            # Process the PDF file with progress updates
+            # Process the file with progress updates
             status_text.text("Starting text extraction...")
-            extracted_text = pdf_processor.extract_text(temp_path, progress_callback=update_progress)
+            extracted_text = document_processor.extract_text(temp_path, progress_callback=update_progress)
             
             # Update progress for text cleanup
             status_text.text("Cleaning up extracted text...")
