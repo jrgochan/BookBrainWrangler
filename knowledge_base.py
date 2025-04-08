@@ -1,8 +1,9 @@
 import os
 import json
 import time
+import tempfile
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_community.embeddings import FakeEmbeddings
 from database import get_connection
 
@@ -34,45 +35,43 @@ class KnowledgeBase:
     def _get_writable_data_dir(self):
         """
         Get a writable directory for knowledge base data.
-        Tries different locations to ensure we have a writable directory.
+        Uses Python's tempfile module to create a directory that is guaranteed to be writable
+        in the current environment.
         
         Returns:
             Path to a writable directory
         """
-        # First, try the standard directory
-        standard_dir = "knowledge_base_data"
-        os.makedirs(standard_dir, exist_ok=True)
-        
-        # Check if it's writable
-        test_file = os.path.join(standard_dir, "test_write.txt")
         try:
-            with open(test_file, 'w') as f:
-                f.write("test")
-            os.remove(test_file)
-            return standard_dir
-        except (IOError, PermissionError):
-            print(f"Warning: {standard_dir} is not writable. Trying alternatives...")
-        
-        # Try the /tmp directory which is usually writable
-        temp_dir = os.path.join(os.path.expanduser("~"), "temp_knowledge_base")
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Check if it's writable
-        test_file = os.path.join(temp_dir, "test_write.txt")
-        try:
-            with open(test_file, 'w') as f:
-                f.write("test")
-            os.remove(test_file)
-            print(f"Using {temp_dir} for knowledge base storage")
-            return temp_dir
-        except (IOError, PermissionError):
-            print(f"Warning: {temp_dir} is not writable either.")
-        
-        # As a last resort, use the current directory
-        current_dir = os.path.join(os.getcwd(), "kb_data")
-        os.makedirs(current_dir, exist_ok=True)
-        print(f"Using {current_dir} for knowledge base storage")
-        return current_dir
+            # First, use the standard directory if it's writable
+            standard_dir = os.path.abspath("knowledge_base_data")
+            os.makedirs(standard_dir, exist_ok=True)
+            
+            # Check if it's writable with a simple test
+            test_file = os.path.join(standard_dir, "test_write.txt")
+            try:
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                os.remove(test_file)
+                print(f"Using standard directory for knowledge base: {standard_dir}")
+                return standard_dir
+            except (IOError, PermissionError) as e:
+                print(f"Cannot write to {standard_dir}: {str(e)}")
+                
+            # Use Python's tempfile to create a directory that's guaranteed to be writable
+            # Get a unique temporary directory that persists until manually deleted
+            temp_base = tempfile.gettempdir()  # Gets the system's temp directory
+            kb_dir = os.path.join(temp_base, 'book_knowledge_base')
+            os.makedirs(kb_dir, exist_ok=True)
+            
+            print(f"Using temporary directory for knowledge base: {kb_dir}")
+            return kb_dir
+            
+        except Exception as e:
+            # If all else fails, create a directory in the current working directory
+            fallback_dir = os.path.join(os.getcwd(), "kb_data")
+            os.makedirs(fallback_dir, exist_ok=True)
+            print(f"Using fallback directory for knowledge base: {fallback_dir}")
+            return fallback_dir
     
     def _init_database(self):
         """Initialize the knowledge base database tables if they don't exist."""

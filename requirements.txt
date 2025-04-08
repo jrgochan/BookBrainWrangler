@@ -22,3 +22,5 @@ ipywidgets>=8.1.5
 Jinja2>=3.1.6
 # Note: jnius is optional and installed separately
 python-docx
+docx
+langchain-chroma
