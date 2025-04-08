@@ -26,6 +26,19 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Hide the default Streamlit nav menu above the title
+hide_streamlit_nav = """
+<style>
+    header {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Adjust spacing to compensate for hidden header */
+    .main .block-container {padding-top: 2rem;}
+</style>
+"""
+st.markdown(hide_streamlit_nav, unsafe_allow_html=True)
+
 def initialize_components():
     """Initialize all major application components."""
     # Create instances of all major components
