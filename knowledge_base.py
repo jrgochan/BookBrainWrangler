@@ -9,9 +9,8 @@ from database import get_connection
 class KnowledgeBase:
     def __init__(self):
         """Initialize the knowledge base."""
-        # Create data directory if it doesn't exist
-        self.data_dir = "knowledge_base_data"
-        os.makedirs(self.data_dir, exist_ok=True)
+        # Create a writable data directory
+        self.data_dir = self._get_writable_data_dir()
         
         # Create the database file if it doesn't exist
         self._init_database()
@@ -31,6 +30,49 @@ class KnowledgeBase:
             persist_directory=os.path.join(self.data_dir, "chroma_db"),
             embedding_function=self.embeddings
         )
+    
+    def _get_writable_data_dir(self):
+        """
+        Get a writable directory for knowledge base data.
+        Tries different locations to ensure we have a writable directory.
+        
+        Returns:
+            Path to a writable directory
+        """
+        # First, try the standard directory
+        standard_dir = "knowledge_base_data"
+        os.makedirs(standard_dir, exist_ok=True)
+        
+        # Check if it's writable
+        test_file = os.path.join(standard_dir, "test_write.txt")
+        try:
+            with open(test_file, 'w') as f:
+                f.write("test")
+            os.remove(test_file)
+            return standard_dir
+        except (IOError, PermissionError):
+            print(f"Warning: {standard_dir} is not writable. Trying alternatives...")
+        
+        # Try the /tmp directory which is usually writable
+        temp_dir = os.path.join(os.path.expanduser("~"), "temp_knowledge_base")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Check if it's writable
+        test_file = os.path.join(temp_dir, "test_write.txt")
+        try:
+            with open(test_file, 'w') as f:
+                f.write("test")
+            os.remove(test_file)
+            print(f"Using {temp_dir} for knowledge base storage")
+            return temp_dir
+        except (IOError, PermissionError):
+            print(f"Warning: {temp_dir} is not writable either.")
+        
+        # As a last resort, use the current directory
+        current_dir = os.path.join(os.getcwd(), "kb_data")
+        os.makedirs(current_dir, exist_ok=True)
+        print(f"Using {current_dir} for knowledge base storage")
+        return current_dir
     
     def _init_database(self):
         """Initialize the knowledge base database tables if they don't exist."""
