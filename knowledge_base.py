@@ -622,3 +622,149 @@ class KnowledgeBase:
         except Exception as e:
             print(f"Error retrieving context: {e}")
             return f"Error retrieving context from knowledge base: {str(e)}"
+            
+    def get_raw_documents_with_query(self, query, num_results=5):
+        """
+        Retrieve raw document objects with similarity scores for a query.
+        This method is used by the knowledge base explorer to analyze results.
+        
+        Args:
+            query: The search query
+            num_results: Number of top results to return
+            
+        Returns:
+            list: List of dictionaries with document data and similarity score
+        """
+        try:
+            # Use Chroma's direct retrieval with MMR
+            results = self.vector_store.similarity_search_with_score(query, k=num_results)
+            
+            if not results:
+                return []
+                
+            documents_with_scores = []
+            conn = get_connection()
+            cursor = conn.cursor()
+            
+            for doc, score in results:
+                # Normalize score to a more readable format (as percentage)
+                # Chroma returns distance, lower is better
+                normalized_score = (1 - score) * 100
+                
+                # Get book info if available
+                book_title = "Unknown"
+                book_author = "Unknown"
+                
+                if doc.metadata and "book_id" in doc.metadata:
+                    book_id = doc.metadata["book_id"]
+                    cursor.execute('SELECT title, author FROM books WHERE id = ?', (book_id,))
+                    book_info = cursor.fetchone()
+                    if book_info:
+                        book_title, book_author = book_info
+                
+                # Create result object
+                result = {
+                    "content": doc.page_content,
+                    "metadata": doc.metadata,
+                    "similarity_score": normalized_score,
+                    "book_title": book_title,
+                    "book_author": book_author
+                }
+                
+                documents_with_scores.append(result)
+                
+            conn.close()
+            return documents_with_scores
+            
+        except Exception as e:
+            print(f"Error getting raw documents: {e}")
+            return []
+            
+    def get_vector_store_stats(self):
+        """
+        Get statistics about the vector store including document count, fields, etc.
+        
+        Returns:
+            dict: Statistics about the vector store
+        """
+        stats = {
+            "total_documents": 0,
+            "total_books": 0,
+            "embedding_dimensions": 0,
+            "content_types": {},
+            "books": [],
+            "sample_documents": []
+        }
+        
+        try:
+            # Get basic collection info
+            result = self.vector_store.get()
+            
+            if result and "ids" in result:
+                stats["total_documents"] = len(result["ids"])
+                
+                # Get embedding dimensions if available
+                if "embeddings" in result and len(result["embeddings"]) > 0:
+                    stats["embedding_dimensions"] = len(result["embeddings"][0])
+                
+                # Process metadata to get content type stats
+                if "metadatas" in result:
+                    content_types = {}
+                    book_ids = set()
+                    
+                    for metadata in result["metadatas"]:
+                        if metadata:
+                            # Track content types
+                            content_type = metadata.get("content_type", "unknown")
+                            if content_type not in content_types:
+                                content_types[content_type] = 0
+                            content_types[content_type] += 1
+                            
+                            # Track unique books
+                            if "book_id" in metadata:
+                                book_ids.add(metadata["book_id"])
+                    
+                    stats["content_types"] = content_types
+                    stats["total_books"] = len(book_ids)
+                    
+                    # Get book details
+                    if book_ids:
+                        conn = get_connection()
+                        cursor = conn.cursor()
+                        
+                        book_details = []
+                        for book_id in book_ids:
+                            cursor.execute('SELECT id, title, author FROM books WHERE id = ?', (book_id,))
+                            book = cursor.fetchone()
+                            if book:
+                                # Count documents for this book
+                                doc_count = sum(1 for m in result["metadatas"] 
+                                               if m and m.get("book_id") == book_id)
+                                
+                                book_details.append({
+                                    "id": book[0],
+                                    "title": book[1],
+                                    "author": book[2],
+                                    "document_count": doc_count
+                                })
+                        
+                        conn.close()
+                        stats["books"] = book_details
+                
+                # Get a few sample documents
+                if "documents" in result and result["documents"]:
+                    # Take the first 5 documents as samples
+                    sample_count = min(5, len(result["documents"]))
+                    for i in range(sample_count):
+                        if i < len(result["documents"]) and i < len(result["metadatas"]) and i < len(result["ids"]):
+                            stats["sample_documents"].append({
+                                "id": result["ids"][i],
+                                "content": result["documents"][i],
+                                "metadata": result["metadatas"][i]
+                            })
+            
+            return stats
+            
+        except Exception as e:
+            print(f"Error getting vector store stats: {e}")
+            return stats

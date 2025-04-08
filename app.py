@@ -87,7 +87,7 @@ book_manager, document_processor, knowledge_base, ollama_client = initialize_com
 st.sidebar.title("Book Knowledge AI")
 app_mode = st.sidebar.selectbox(
     "Select Mode",
-    ["Book Management", "Knowledge Base", "Chat with AI", "Settings"]
+    ["Book Management", "Knowledge Base", "Chat with AI", "Knowledge Base Explorer", "Settings"]
 )
 
 # Book Management section
@@ -745,6 +745,300 @@ elif app_mode == "Chat with AI":
         # Add AI response to chat history
         st.session_state.chat_history.append({"role": "assistant", "content": response})
         st.chat_message("assistant").write(response)
+
+# Knowledge Base Explorer
+elif app_mode == "Knowledge Base Explorer":
+    st.title("Knowledge Base Explorer")
+    st.write("Explore the structure and content of your AI's knowledge base.")
+    
+    # Check if knowledge base exists and has content
+    kb_book_ids = knowledge_base.get_indexed_book_ids()
+    if not kb_book_ids:
+        st.warning("Your knowledge base is empty. Please add books to the knowledge base first.")
+        st.stop()
+    
+    # Get vector store statistics
+    with st.spinner("Analyzing knowledge base structure..."):
+        kb_stats = knowledge_base.get_vector_store_stats()
+    
+    # Overview section with metrics
+    st.header("Knowledge Base Overview")
+    
+    # Create metrics for key statistics
+    metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
+    with metrics_col1:
+        st.metric("Total Documents", kb_stats["total_documents"])
+    with metrics_col2:
+        st.metric("Books Indexed", kb_stats["total_books"])
+    with metrics_col3:
+        st.metric("Embedding Dimensions", kb_stats["embedding_dimensions"])
+    with metrics_col4:
+        content_types = kb_stats.get("content_types", {})
+        text_docs = content_types.get("text", 0)
+        image_docs = content_types.get("image", 0)
+        st.metric("Text / Image Docs", f"{text_docs} / {image_docs}")
+    
+    # Create tabs for different explorer views
+    explore_tab1, explore_tab2, explore_tab3, explore_tab4 = st.tabs([
+        "Content Explorer", "Embedding Visualizer", "Query Analyzer", "Structure Analysis"
+    ])
+    
+    # Content Explorer tab
+    with explore_tab1:
+        st.subheader("Book Content Explorer")
+        st.write("Browse the books and documents in your knowledge base.")
+        
+        # Book selector
+        if kb_stats["books"]:
+            book_options = [f"{b['title']} by {b['author']} ({b['document_count']} docs)" for b in kb_stats["books"]]
+            selected_book_idx = st.selectbox("Select a book to explore", range(len(book_options)), format_func=lambda x: book_options[x])
+            selected_book = kb_stats["books"][selected_book_idx]
+            
+            st.write(f"### {selected_book['title']}")
+            st.write(f"**Author:** {selected_book['author']}")
+            st.write(f"**Documents:** {selected_book['document_count']}")
+            
+            # Sample document viewer
+            st.subheader("Sample Documents")
+            st.write("Here are some sample document chunks from your knowledge base:")
+            
+            sample_docs = [doc for doc in kb_stats["sample_documents"] 
+                         if doc["metadata"] and doc["metadata"].get("book_id") == selected_book["id"]]
+            
+            if sample_docs:
+                for i, doc in enumerate(sample_docs[:3]):  # Limit to 3 samples
+                    with st.expander(f"Document Chunk {i+1}"):
+                        st.code(doc["content"], language="text")
+                        st.write("**Metadata:**")
+                        st.json(doc["metadata"])
+            else:
+                st.info("No sample documents available for this book. Try rebuilding the knowledge base.")
+        else:
+            st.info("No books found in the knowledge base statistics.")
+    
+    # Embedding Visualizer tab
+    with explore_tab2:
+        st.subheader("Embedding Visualization")
+        st.write("Visualize how your documents are arranged in embedding space (reduced to 2D).")
+        
+        # Import visualization libraries only when needed
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from sklearn.decomposition import PCA
+        import plotly.express as px
+        import pandas as pd
+        
+        # Use spinner to show loading state during visualization
+        with st.spinner("Generating embedding visualization... This might take a moment."):
+            try:
+                # Get embeddings from the vector store
+                result = knowledge_base.vector_store.get()
+                
+                if result and "embeddings" in result and len(result["embeddings"]) > 0:
+                    # Create a dataframe with embeddings and metadata
+                    embeddings = np.array(result["embeddings"])
+                    
+                    # Check if we have enough data for visualization
+                    if len(embeddings) < 2:
+                        st.warning("Not enough documents for visualization. Add more books to the knowledge base.")
+                    else:
+                        # Get metadata for coloring by book
+                        book_ids = []
+                        content_types = []
+                        book_titles = {}
+                        
+                        # Get book titles for all book IDs
+                        conn = get_connection()
+                        cursor = conn.cursor()
+                        for metadata in result["metadatas"]:
+                            if metadata and "book_id" in metadata:
+                                book_id = metadata["book_id"]
+                                book_ids.append(book_id)
+                                
+                                # Get book title if not already fetched
+                                if book_id not in book_titles:
+                                    cursor.execute('SELECT title FROM books WHERE id = ?', (book_id,))
+                                    book = cursor.fetchone()
+                                    if book:
+                                        book_titles[book_id] = book[0]
+                                    else:
+                                        book_titles[book_id] = f"Book {book_id}"
+                                
+                                # Get content type
+                                content_types.append(metadata.get("content_type", "unknown"))
+                            else:
+                                book_ids.append("unknown")
+                                content_types.append("unknown")
+                        conn.close()
+                        
+                        # Convert book IDs to titles for better visualization
+                        book_names = [book_titles.get(bid, f"Book {bid}") if bid != "unknown" else "Unknown" 
+                                    for bid in book_ids]
+                        
+                        # Apply dimensionality reduction
+                        method = st.radio("Dimensionality Reduction Method", ["PCA", "t-SNE"])
+                        
+                        if method == "PCA":
+                            pca = PCA(n_components=2)
+                            embeddings_2d = pca.fit_transform(embeddings)
+                            variance_explained = pca.explained_variance_ratio_.sum() * 100
+                            subtitle = f"PCA (explains {variance_explained:.1f}% of variance)"
+                        else:  # t-SNE
+                            from sklearn.manifold import TSNE
+                            tsne = TSNE(n_components=2, random_state=42)
+                            embeddings_2d = tsne.fit_transform(embeddings)
+                            subtitle = "t-SNE plot (distance preserving)"
+                        
+                        # Create a DataFrame for plotting
+                        df = pd.DataFrame({
+                            'x': embeddings_2d[:, 0],
+                            'y': embeddings_2d[:, 1],
+                            'Book': book_names,
+                            'Content Type': content_types
+                        })
+                        
+                        # Create color options
+                        color_by = st.radio("Color points by:", ["Book", "Content Type"])
+                        
+                        # Create the plot using Plotly for interactivity
+                        fig = px.scatter(
+                            df, x='x', y='y', color=color_by,
+                            hover_data=['Book', 'Content Type'],
+                            title=f"Document Embeddings Visualization ({subtitle})"
+                        )
+                        
+                        # Improve aesthetics
+                        fig.update_layout(
+                            height=600,
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=1.02,
+                                xanchor="right",
+                                x=1
+                            )
+                        )
+                        
+                        # Remove axis labels as they don't have inherent meaning
+                        fig.update_xaxes(title="")
+                        fig.update_yaxes(title="")
+                        
+                        # Show the interactive plot
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        st.info("""
+                        **What this visualization shows:** Each point represents a document (text chunk or image) 
+                        in your knowledge base. Points that are closer together are more semantically similar. 
+                        This gives you a bird's-eye view of how your knowledge is organized.
+                        """)
+                else:
+                    st.warning("No embeddings found in the vector store. Try rebuilding the knowledge base.")
+            
+            except Exception as e:
+                st.error(f"Error generating visualization: {str(e)}")
+    
+    # Query Analyzer tab
+    with explore_tab3:
+        st.subheader("Query Analyzer")
+        st.write("Enter a query to see how the AI would retrieve information from your knowledge base.")
+        
+        # Query input
+        test_query = st.text_input("Enter a test query", "What is the main theme of the book?")
+        num_results = st.slider("Number of results to retrieve", 1, 20, 5)
+        
+        if st.button("Analyze Query"):
+            with st.spinner("Retrieving and analyzing results..."):
+                # Get raw results with scores
+                results = knowledge_base.get_raw_documents_with_query(test_query, num_results=num_results)
+                
+                if results:
+                    # Show results with similarity scores
+                    st.write("### Query Results")
+                    st.write(f"Found {len(results)} relevant document chunks for your query:")
+                    
+                    for i, result in enumerate(results):
+                        # Format the similarity score
+                        similarity = result["similarity_score"]
+                        
+                        # Create a color based on the similarity score
+                        if similarity >= 90:
+                            similarity_color = "green"
+                        elif similarity >= 70:
+                            similarity_color = "orange"
+                        else:
+                            similarity_color = "red"
+                        
+                        with st.expander(f"Result {i+1}: {result['book_title']} (Similarity: {similarity:.1f}%)"):
+                            st.markdown(f"**Similarity Score:** :{similarity_color}[{similarity:.1f}%]")
+                            st.markdown(f"**Book:** {result['book_title']} by {result['book_author']}")
+                            st.markdown("**Content:**")
+                            st.text(result["content"])
+                            st.markdown("**Metadata:**")
+                            st.json(result["metadata"])
+                else:
+                    st.warning("No results found for this query. Try a different question or add more books to the knowledge base.")
+    
+    # Structure Analysis tab  
+    with explore_tab4:
+        st.subheader("Knowledge Base Structure Analysis")
+        st.write("Analyze the internal structure of your knowledge base.")
+        
+        # Content type distribution
+        st.write("### Content Type Distribution")
+        content_types = kb_stats.get("content_types", {})
+        
+        if content_types:
+            # Create a pie chart of content types
+            types_df = pd.DataFrame({
+                'Content Type': list(content_types.keys()),
+                'Count': list(content_types.values())
+            })
+            
+            fig = px.pie(
+                types_df, 
+                values='Count', 
+                names='Content Type',
+                title='Document Distribution by Content Type'
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No content type information available.")
+        
+        # Document distribution by book
+        st.write("### Document Distribution by Book")
+        if kb_stats["books"]:
+            # Create a bar chart of documents per book
+            books_df = pd.DataFrame(kb_stats["books"])
+            books_df = books_df.sort_values(by="document_count", ascending=False)
+            
+            fig = px.bar(
+                books_df,
+                x='title',
+                y='document_count',
+                title='Number of Document Chunks per Book',
+                labels={'title': 'Book Title', 'document_count': 'Number of Chunks'}
+            )
+            
+            # Improve readability for many books
+            fig.update_layout(
+                xaxis_tickangle=-45,
+                height=500,
+                margin=dict(b=100)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Show book details in a table
+            st.write("### Book Details")
+            book_details_df = pd.DataFrame(kb_stats["books"])
+            book_details_df = book_details_df.rename(columns={
+                'title': 'Title',
+                'author': 'Author',
+                'document_count': 'Document Count'
+            })
+            st.dataframe(book_details_df[['Title', 'Author', 'Document Count']], use_container_width=True)
+        else:
+            st.info("No books found in the knowledge base statistics.")
 
 # Settings page
 elif app_mode == "Settings":

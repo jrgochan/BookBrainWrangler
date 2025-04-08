@@ -25,3 +25,7 @@ python-docx
 docx
 langchain-chroma
 sentence-transformers
+matplotlib
+pandas
+plotly
+scikit-learn
