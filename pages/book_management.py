@@ -76,8 +76,10 @@ def render_upload_section(book_manager, document_processor):
         status_container = st.empty()
         info_container = st.empty()
         
-        # OCR visualization containers
-        with st.expander("Document Processing Details", expanded=True):
+        # OCR visualization containers - using a container instead of nested expander
+        st.subheader("Document Processing Details")
+        ocr_container = st.container()
+        with ocr_container:
             ocr_image_container = st.empty()
             ocr_text_container = st.empty()
             ocr_confidence_container = st.empty()

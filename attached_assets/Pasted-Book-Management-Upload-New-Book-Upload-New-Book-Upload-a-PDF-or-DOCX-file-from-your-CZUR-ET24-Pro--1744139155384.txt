@@ -1,0 +1,46 @@
+Book Management
+
+Upload New Book
+Upload New Book
+
+Upload a PDF or DOCX file from your CZUR ET24 Pro scanner or other sources
+Drag and drop file here
+Limit 500MB per file • PDF, DOCX
+
+Persephones-Quest.pdf
+201.4MB
+
+Book Title
+
+Book Author
+
+Category (comma-separated for multiple categories)
+
+streamlit.errors.StreamlitAPIException: Expanders may not be nested inside other expanders.
+Traceback:
+
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 121, in exec_func_with_error_handling
+    result = func()
+             ^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 640, in code_to_exec
+    exec(code, module.__dict__)
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/app.py", line 149, in <module>
+    main()
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/app.py", line 131, in main
+    render_book_management_page(book_manager, document_processor, knowledge_base)
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/pages/book_management.py", line 30, in render_book_management_page
+    render_upload_section(book_manager, document_processor)
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/pages/book_management.py", line 80, in render_upload_section
+    with st.expander("Document Processing Details", expanded=True):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/runtime/metrics_util.py", line 410, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/elements/layouts.py", line 601, in expander
+    return self.dg._block(block_proto=block_proto)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/delta_generator.py", line 518, in _block
+    _check_nested_element_violation(self, block_type, ancestor_block_types)
+File "/mnt/c/Users/jrgochan.flux-bawkz/code/github.com/jrgochan/BookBrainSync/.venv/lib/python3.12/site-packages/streamlit/delta_generator.py", line 598, in _check_nested_element_violation
+    raise StreamlitAPIException(
+
