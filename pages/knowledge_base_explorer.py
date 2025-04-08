@@ -152,7 +152,13 @@ def render_vector_visualization(knowledge_base):
                     )
                     
                     # Add random book IDs for demonstration
-                    book_ids = np.random.choice(indexed_book_ids, sample_size)
+                    # Get the list of indexed book IDs
+                    available_book_ids = knowledge_base.get_indexed_book_ids()
+                    # Use the available book IDs, or create random ones if needed
+                    if available_book_ids:
+                        book_ids = np.random.choice(available_book_ids, sample_size, replace=True)
+                    else:
+                        book_ids = np.random.randint(1, 100, sample_size)
                     df['Book ID'] = book_ids
                     
                     # Add random document types for coloring
@@ -206,7 +212,8 @@ def render_metadata_analysis(knowledge_base):
             
             # Book distribution
             st.subheader("Documents by Book")
-            book_counts = {f"Book {i+1}": np.random.randint(10, 100) for i in range(min(len(indexed_book_ids), 10))}
+            available_book_ids = knowledge_base.get_indexed_book_ids()
+            book_counts = {f"Book {i+1}": np.random.randint(10, 100) for i in range(min(len(available_book_ids), 10))}
             book_df = pd.DataFrame({'Book': list(book_counts.keys()), 'Document Count': list(book_counts.values())})
             
             fig = px.bar(book_df, x='Book', y='Document Count', title="Document Distribution by Book")

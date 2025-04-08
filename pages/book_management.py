@@ -26,8 +26,8 @@ def render_book_management_page(book_manager, document_processor, knowledge_base
     st.title("Book Management")
     
     # Upload new book section
-    with st.expander("Upload New Book", expanded=True):
-        render_upload_section(book_manager, document_processor)
+    st.subheader("Upload New Book")
+    render_upload_section(book_manager, document_processor)
     
     # Book library section
     render_library_section(book_manager)
@@ -43,7 +43,6 @@ def render_upload_section(book_manager, document_processor):
         book_manager: The BookManager instance
         document_processor: The DocumentProcessor instance
     """
-    st.header("Upload New Book")
     
     # File uploader
     uploaded_file = st.file_uploader(

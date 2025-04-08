@@ -60,7 +60,7 @@ def analyze_word_frequency(
     min_word_length: int = 3, 
     max_words: int = 200,
     exclude_stopwords: bool = True,
-    custom_stopwords: List[str] = None
+    custom_stopwords: Optional[List[str]] = None
 ) -> List[Tuple[str, int]]:
     """
     Analyze word frequency in a text.

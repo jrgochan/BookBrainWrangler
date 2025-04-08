@@ -9,7 +9,7 @@ import hashlib
 import tempfile
 from typing import Dict, List, Any, Optional, BinaryIO, Union
 
-def is_valid_document(file_path: str, supported_extensions: List[str] = None) -> bool:
+def is_valid_document(file_path: str, supported_extensions: Optional[List[str]] = None) -> bool:
     """
     Check if a file is a valid document type.
     
@@ -32,7 +32,7 @@ def is_valid_document(file_path: str, supported_extensions: List[str] = None) ->
     
     return ext in supported_extensions
 
-def save_uploaded_file(uploaded_file: BinaryIO, target_dir: str = "uploads") -> str:
+def save_uploaded_file(uploaded_file: Any, target_dir: str = "uploads") -> str:
     """
     Save an uploaded file to the filesystem.
     
