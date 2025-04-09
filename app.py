@@ -439,47 +439,9 @@ def render_chat_page():
 # Render settings page
 def render_settings_page():
     """Render the settings page."""
-    st.title("Settings")
-    st.subheader("Configure application settings")
-    
-    # Knowledge base settings
-    st.header("Knowledge Base Settings")
-    
-    kb_path = st.text_input(
-        "Knowledge Base Path",
-        value=st.session_state.knowledge_base.base_path,
-        disabled=True
-    )
-    
-    kb_collection = st.text_input(
-        "Collection Name",
-        value=st.session_state.knowledge_base.collection_name,
-        disabled=True
-    )
-    
-    # Reset knowledge base
-    st.header("Reset Knowledge Base")
-    st.warning("⚠️ This will delete all documents from your knowledge base. This action cannot be undone.")
-    
-    if st.button("Reset Knowledge Base", key="reset_kb_btn"):
-        confirm = st.checkbox("I understand that this action cannot be undone", key="reset_kb_confirm_checkbox")
-        
-        if confirm and st.button("Confirm Reset", key="confirm_reset_btn"):
-            st.session_state.knowledge_base.reset()
-            st.success("Knowledge base has been reset.")
-            st.rerun()
-    
-    # Application theme
-    st.header("Application Theme")
-    theme = st.selectbox(
-        "Select Theme",
-        ["Light", "Dark"],
-        index=0 if st.session_state.theme == "light" else 1
-    )
-    
-    if theme.lower() != st.session_state.theme:
-        st.session_state.theme = theme.lower()
-        st.success(f"Theme changed to {theme}.")
+    # Import and load the settings page module
+    from pages.settings import settings_page
+    settings_page()
 
 # Main application
 def main():

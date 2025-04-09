@@ -1,27 +1,29 @@
 """
-Settings page for the application.
+Settings page for Book Knowledge AI application.
 """
 
 import streamlit as st
 import os
+import platform
 from typing import Dict, List, Any, Tuple
 
 from knowledge_base.config import VECTOR_STORE_OPTIONS, DEFAULT_VECTOR_STORE
+from ai import get_default_client, create_client, AIClient
+from document_processing.ocr import OCRProcessor
+from utils.logger import get_logger
 
-def render_settings_page(ollama_client):
-    """
-    Render the Settings page.
-    
-    Args:
-        ollama_client: The OllamaClient instance
-    """
+# Initialize logger
+logger = get_logger(__name__)
+
+def settings_page():
+    """Entry point for the settings page."""
     st.title("Book Knowledge AI Settings")
     
     # Tabs for different settings
     tab1, tab2, tab3, tab4 = st.tabs(["AI Settings", "Knowledge Base", "OCR Settings", "Display Settings"])
     
     with tab1:
-        render_ai_settings(ollama_client)
+        render_ai_settings()
     
     with tab2:
         render_knowledge_base_settings()
@@ -32,89 +34,380 @@ def render_settings_page(ollama_client):
     with tab4:
         render_display_settings()
 
-def render_ai_settings(ollama_client):
+def render_ai_settings():
     """
     Render AI settings section.
-    
-    Args:
-        ollama_client: The OllamaClient instance
     """
-    st.header("AI Server Settings")
+    # Make sure our logger is initialized
+    logger = get_logger(__name__)
+    st.header("AI Settings")
     
-    # Get current Ollama settings
-    if 'ollama_settings' not in st.session_state:
-        st.session_state.ollama_settings = {
+    # Initialize AI client settings if not already present
+    if 'ai_settings' not in st.session_state:
+        st.session_state.ai_settings = {
+            'client_type': 'ollama',
             'model': 'llama2',
-            'server_url': 'http://localhost:11434',
+            'api_base': 'http://localhost:11434',
             'temperature': 0.7,
-            'context_window': 4096,
+            'max_tokens': 4096,
+            'api_key': None
         }
-        
-    current_host = st.session_state.ollama_settings['server_url']
-    current_model = st.session_state.ollama_settings['model']
     
-    # Connection status
-    connection_status = ollama_client.is_server_running()
+    current_settings = st.session_state.ai_settings
     
-    if connection_status:
-        st.success(f"✓ Connected to Ollama server at {current_host}")
-        
-        # Display available models
-        model_names = ollama_client.get_available_models()
-        if model_names:
-            # Create a clickable list of models
-            st.subheader("Available Models")
-            
-            for name in model_names:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.write(f"**{name}**")
-                with col2:
-                    if name == current_model:
-                        st.success("Active")
-                    else:
-                        if st.button(f"Select", key=f"select_{name}"):
-                            st.session_state.ollama_settings['model'] = name
-                            st.success(f"Model changed to {name}")
-                            st.rerun()
-        else:
-            st.warning("No models found on the Ollama server. Use 'ollama pull MODEL_NAME' to download models.")
-    else:
-        st.error(f"Cannot connect to Ollama server at {current_host}")
-        st.info("""
-            ### How to set up Ollama:
-            1. Install Ollama from [ollama.ai](https://ollama.ai)
-            2. Start the Ollama server
-            3. Pull a model like 'llama2' using the command: `ollama pull llama2`
-            4. Configure the connection below
-        """)
+    # Get currently available AI client types
+    try:
+        from ai.factory import AIClientFactory
+        available_clients = AIClientFactory.get_available_client_types()
+    except Exception as e:
+        logger.error(f"Error getting available AI client types: {str(e)}")
+        available_clients = ['ollama', 'openai', 'huggingface', 'openrouter']
     
-    # Server configuration
-    st.subheader("Server Configuration")
+    # Create friendly names for client types
+    client_display_names = {
+        'ollama': 'Ollama (Local AI)',
+        'openai': 'OpenAI API',
+        'huggingface': 'Hugging Face',
+        'openrouter': 'OpenRouter'
+    }
     
-    with st.form("ollama_settings_form"):
-        new_host = st.text_input("Ollama API Host", value=current_host)
-        new_model = st.text_input("Default Model", value=current_model)
+    # Get current AI client
+    try:
+        ai_client = get_default_client()
+        client_status = ai_client.is_available()
+        current_model = ai_client.model_name
+    except Exception as e:
+        logger.error(f"Error getting default AI client: {str(e)}")
+        ai_client = None
+        client_status = False
+        current_model = current_settings.get('model', 'llama2')
+    
+    # Current AI service status
+    client_type = current_settings.get('client_type', 'ollama')
+    
+    # Show current status
+    st.subheader("AI Service Status")
+    
+    if client_status:
+        st.success(f"✓ Connected to {client_display_names.get(client_type, client_type)}")
         
-        submit_button = st.form_submit_button("Update Settings")
-        
-        if submit_button:
-            if new_host != current_host or new_model != current_model:
-                # Update settings
-                # Update client configuration
-                ollama_client.server_url = new_host
-                ollama_client.model = new_model
-                ollama_client.api_base = f"{new_host}/api"
+        # Display available models if we can get them
+        try:
+            model_names = ai_client.list_models()
+            if model_names:
+                st.subheader("Available Models")
                 
-                # Test connection
-                if ollama_client.is_server_running():
-                    # Update session state
-                    st.session_state.ollama_settings['server_url'] = new_host
-                    st.session_state.ollama_settings['model'] = new_model
-                    st.success("Settings updated successfully!")
-                    st.rerun()
+                if len(model_names) > 10:
+                    # If there are too many models, show a select box
+                    selected_model = st.selectbox(
+                        "Select Model",
+                        options=model_names,
+                        index=model_names.index(current_model) if current_model in model_names else 0,
+                        key="model_select"
+                    )
+                    
+                    if selected_model != current_model:
+                        try:
+                            new_client = create_client(client_type, model_name=selected_model)
+                            if new_client.is_available():
+                                # Update settings
+                                current_settings['model'] = selected_model
+                                st.session_state.ai_settings = current_settings
+                                st.success(f"Model changed to {selected_model}")
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Error changing model: {str(e)}")
                 else:
-                    st.error(f"Failed to connect to Ollama at {new_host}")
+                    # With fewer models, show them as buttons
+                    for name in model_names:
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.write(f"**{name}**")
+                        with col2:
+                            if name == current_model:
+                                st.success("Active")
+                            else:
+                                if st.button(f"Select", key=f"select_{name}"):
+                                    try:
+                                        new_client = create_client(client_type, model_name=name)
+                                        if new_client.is_available():
+                                            # Update settings
+                                            current_settings['model'] = name
+                                            st.session_state.ai_settings = current_settings
+                                            st.success(f"Model changed to {name}")
+                                            st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error changing model: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error listing models: {str(e)}")
+            st.warning(f"Could not retrieve model list: {str(e)}")
+    else:
+        st.error(f"Cannot connect to {client_display_names.get(client_type, client_type)}")
+        
+        # Show specific setup instructions based on client type
+        if client_type == 'ollama':
+            st.info("""
+                ### How to set up Ollama:
+                1. Install Ollama from [ollama.ai](https://ollama.ai)
+                2. Start the Ollama server
+                3. Pull a model like 'llama2' using the command: `ollama pull llama2`
+                4. Configure the connection below
+            """)
+        elif client_type == 'openai':
+            st.info("""
+                ### How to set up OpenAI API:
+                1. Create an account at [OpenAI](https://platform.openai.com)
+                2. Generate an API key in your account dashboard
+                3. Add your API key in the configuration below
+            """)
+        elif client_type == 'huggingface':
+            st.info("""
+                ### How to set up Hugging Face:
+                1. Create an account at [Hugging Face](https://huggingface.co)
+                2. Generate an API token in your account settings
+                3. Add your API token in the configuration below
+            """)
+    
+    # AI provider configuration
+    st.subheader("AI Provider Configuration")
+    
+    # Client type selection
+    client_type = st.selectbox(
+        "AI Provider",
+        options=available_clients,
+        format_func=lambda x: client_display_names.get(x, x),
+        index=available_clients.index(current_settings.get('client_type', 'ollama')) if current_settings.get('client_type', 'ollama') in available_clients else 0,
+        key="client_type_select"
+    )
+    
+    # Different form based on selected client type
+    if client_type == 'ollama':
+        with st.form("ollama_settings_form"):
+            api_base = st.text_input(
+                "Ollama API URL",
+                value=current_settings.get('api_base', 'http://localhost:11434'),
+                help="URL for the Ollama API server, usually http://localhost:11434"
+            )
+            
+            model = st.text_input(
+                "Default Model",
+                value=current_settings.get('model', 'llama2'),
+                help="Default model to use with Ollama, e.g. llama2, mistral, llama2-uncensored"
+            )
+            
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=2.0,
+                value=float(current_settings.get('temperature', 0.7)),
+                step=0.1,
+                help="Controls randomness in responses. Lower values are more focused, higher values more creative."
+            )
+            
+            submit_button = st.form_submit_button("Update Ollama Settings")
+            
+            if submit_button:
+                # Save settings
+                new_settings = current_settings.copy()
+                new_settings.update({
+                    'client_type': 'ollama',
+                    'api_base': api_base,
+                    'model': model,
+                    'temperature': temperature
+                })
+                
+                # Test connection with new settings
+                try:
+                    test_client = create_client(
+                        'ollama',
+                        model_name=model,
+                        api_base=api_base
+                    )
+                    
+                    if test_client.is_available():
+                        st.session_state.ai_settings = new_settings
+                        st.success("Ollama settings updated successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Could not connect to Ollama at {api_base}")
+                except Exception as e:
+                    st.error(f"Error updating Ollama settings: {str(e)}")
+                
+    elif client_type == 'openai':
+        with st.form("openai_settings_form"):
+            api_key = st.text_input(
+                "OpenAI API Key",
+                value=current_settings.get('api_key', ''),
+                type="password",
+                help="Your OpenAI API key from platform.openai.com"
+            )
+            
+            api_base = st.text_input(
+                "API Base URL (Optional)",
+                value=current_settings.get('api_base', 'https://api.openai.com/v1'),
+                help="URL for the OpenAI API. Leave as default unless using a custom endpoint."
+            )
+            
+            model = st.text_input(
+                "Model",
+                value=current_settings.get('model', 'gpt-3.5-turbo'),
+                help="OpenAI model to use, e.g., gpt-3.5-turbo, gpt-4"
+            )
+            
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=2.0,
+                value=float(current_settings.get('temperature', 0.7)),
+                step=0.1,
+                help="Controls randomness in responses. Lower values are more focused, higher values more creative."
+            )
+            
+            submit_button = st.form_submit_button("Update OpenAI Settings")
+            
+            if submit_button:
+                # Save settings
+                new_settings = current_settings.copy()
+                new_settings.update({
+                    'client_type': 'openai',
+                    'api_key': api_key,
+                    'api_base': api_base,
+                    'model': model,
+                    'temperature': temperature
+                })
+                
+                # Test connection with new settings
+                if api_key:
+                    try:
+                        test_client = create_client(
+                            'openai',
+                            model_name=model,
+                            api_key=api_key,
+                            api_base=api_base
+                        )
+                        
+                        if test_client.is_available():
+                            st.session_state.ai_settings = new_settings
+                            st.success("OpenAI settings updated successfully!")
+                            st.rerun()
+                        else:
+                            st.error("Could not connect to OpenAI API. Please check your API key and settings.")
+                    except Exception as e:
+                        st.error(f"Error updating OpenAI settings: {str(e)}")
+                else:
+                    st.error("API key is required for OpenAI")
+                
+    elif client_type == 'huggingface':
+        with st.form("huggingface_settings_form"):
+            api_key = st.text_input(
+                "Hugging Face API Token",
+                value=current_settings.get('api_key', ''),
+                type="password",
+                help="Your Hugging Face API token"
+            )
+            
+            model = st.text_input(
+                "Model",
+                value=current_settings.get('model', 'google/flan-t5-xxl'),
+                help="Hugging Face model ID, e.g., google/flan-t5-xxl"
+            )
+            
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=2.0,
+                value=float(current_settings.get('temperature', 0.7)),
+                step=0.1,
+                help="Controls randomness in responses. Lower values are more focused, higher values more creative."
+            )
+            
+            submit_button = st.form_submit_button("Update Hugging Face Settings")
+            
+            if submit_button:
+                # Save settings
+                new_settings = current_settings.copy()
+                new_settings.update({
+                    'client_type': 'huggingface',
+                    'api_key': api_key,
+                    'model': model,
+                    'temperature': temperature
+                })
+                
+                # Test connection with new settings
+                if api_key:
+                    try:
+                        test_client = create_client(
+                            'huggingface',
+                            model_name=model,
+                            api_key=api_key
+                        )
+                        
+                        if test_client.is_available():
+                            st.session_state.ai_settings = new_settings
+                            st.success("Hugging Face settings updated successfully!")
+                            st.rerun()
+                        else:
+                            st.error("Could not connect to Hugging Face API. Please check your API token and settings.")
+                    except Exception as e:
+                        st.error(f"Error updating Hugging Face settings: {str(e)}")
+                else:
+                    st.error("API token is required for Hugging Face")
+                
+    elif client_type == 'openrouter':
+        with st.form("openrouter_settings_form"):
+            api_key = st.text_input(
+                "OpenRouter API Key",
+                value=current_settings.get('api_key', ''),
+                type="password",
+                help="Your OpenRouter API key from openrouter.ai"
+            )
+            
+            model = st.text_input(
+                "Model",
+                value=current_settings.get('model', 'openai/gpt-3.5-turbo'),
+                help="OpenRouter model ID, e.g., openai/gpt-3.5-turbo, anthropic/claude-2"
+            )
+            
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=2.0,
+                value=float(current_settings.get('temperature', 0.7)),
+                step=0.1,
+                help="Controls randomness in responses. Lower values are more focused, higher values more creative."
+            )
+            
+            submit_button = st.form_submit_button("Update OpenRouter Settings")
+            
+            if submit_button:
+                # Save settings
+                new_settings = current_settings.copy()
+                new_settings.update({
+                    'client_type': 'openrouter',
+                    'api_key': api_key,
+                    'model': model,
+                    'temperature': temperature
+                })
+                
+                # Test connection with new settings
+                if api_key:
+                    try:
+                        test_client = create_client(
+                            'openrouter',
+                            model_name=model,
+                            api_key=api_key
+                        )
+                        
+                        if test_client.is_available():
+                            st.session_state.ai_settings = new_settings
+                            st.success("OpenRouter settings updated successfully!")
+                            st.rerun()
+                        else:
+                            st.error("Could not connect to OpenRouter API. Please check your API key and settings.")
+                    except Exception as e:
+                        st.error(f"Error updating OpenRouter settings: {str(e)}")
+                else:
+                    st.error("API key is required for OpenRouter")
 
 def render_ocr_settings():
     """Render OCR settings section."""
