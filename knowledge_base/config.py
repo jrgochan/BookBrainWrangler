@@ -4,9 +4,7 @@ Configuration settings for the Knowledge Base.
 
 # Vector store settings
 DEFAULT_VECTOR_STORE_SETTINGS = {
-    "anonymized_telemetry": False,
-    "allow_reset": True,
-    "persist_directory": "knowledge_base_data/chroma_db",
+    "persist_directory": "knowledge_base_data/faiss_db",
     "collection_name": "book_knowledge_base",
     "embedding_space": "cosine",  # Distance metric for vector similarity
 }

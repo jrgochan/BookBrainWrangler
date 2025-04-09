@@ -156,3 +156,15 @@ class EmbeddingModel:
             raise RuntimeError("Embedding model not initialized")
         
         return self.model.embed_query(text)
+    
+    def __call__(self, text):
+        """
+        Make the embedding model callable to support direct use in FAISS vectorstore.
+        
+        Args:
+            text: String to embed
+            
+        Returns:
+            Embedding as a numpy array
+        """
+        return self.embed_query(text)

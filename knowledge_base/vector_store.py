@@ -101,7 +101,8 @@ class VectorStore:
                 self.vector_store = FAISS.load_local(
                     folder_path=self.persist_directory,
                     index_name=self.collection_name,
-                    embeddings=self.embedding_function
+                    embeddings=self.embedding_function,
+                    allow_dangerous_deserialization=True  # Required in newer versions
                 )
                 
                 # Load our custom metadata
@@ -113,11 +114,26 @@ class VectorStore:
                 logger.info(f"Creating new FAISS index at {self.persist_directory}")
                 
                 # Create a new empty FAISS index with specified distance function
-                self.vector_store = FAISS.from_documents(
-                    documents=[],  # Empty initially
+                # We need at least one document to initialize the index properly
+                # Create a temporary document with a dummy embedding to initialize the structure
+                from langchain_core.documents import Document
+                
+                # Create a dummy document to initialize the structure
+                from langchain_core.documents import Document
+                
+                # Get vector dimension by creating a single embedding
+                dummy_text = "This is a temporary document for initialization"
+                
+                # Use from_texts which handles the empty case properly
+                self.vector_store = FAISS.from_texts(
+                    texts=[dummy_text],
                     embedding=self.embedding_function,
-                    distance_strategy=self.metric_mapping[self.distance_function]
+                    metadatas=[{"temporary": True}]
                 )
+                
+                # Then clear it to have a truly empty index
+                temp_id = list(self.vector_store.docstore._dict.keys())[0]
+                self.vector_store.delete([temp_id])
                 
                 # Save the empty index
                 self.vector_store.save_local(
@@ -369,11 +385,19 @@ class VectorStore:
             metadatas = [self.document_metadatas[id] for id in keep_ids if id in self.document_metadatas]
             
             # Create a new empty FAISS index with specified distance function
-            new_index = FAISS.from_documents(
-                documents=[],  # Empty initially
+            # Create a dummy document to initialize the index 
+            dummy_text = "This is a temporary document for initialization"
+            
+            # Use from_texts which handles the initialization properly
+            new_index = FAISS.from_texts(
+                texts=[dummy_text],
                 embedding=self.embedding_function,
-                distance_strategy=self.metric_mapping[self.distance_function]
+                metadatas=[{"temporary": True}]
             )
+            
+            # Then clear it to have a truly empty index
+            temp_id = list(new_index.docstore._dict.keys())[0]
+            new_index.delete([temp_id])
             
             # Add documents to keep
             if texts:
@@ -424,11 +448,19 @@ class VectorStore:
             doc_count = len(self.document_metadatas)
             
             # Create a new empty FAISS index
-            self.vector_store = FAISS.from_documents(
-                documents=[],  # Empty initially
+            # Create a dummy document to initialize the structure
+            dummy_text = "This is a temporary document for initialization"
+            
+            # Use from_texts which handles the initialization properly
+            self.vector_store = FAISS.from_texts(
+                texts=[dummy_text],
                 embedding=self.embedding_function,
-                distance_strategy=self.metric_mapping[self.distance_function]
+                metadatas=[{"temporary": True}]
             )
+            
+            # Then clear it to have a truly empty index
+            temp_id = list(self.vector_store.docstore._dict.keys())[0]
+            self.vector_store.delete([temp_id])
             
             # Clear document metadata and content
             self.document_metadatas = {}
@@ -463,11 +495,19 @@ class VectorStore:
                     os.remove(custom_metadata_path)
                 
                 # Create a fresh empty index
-                self.vector_store = FAISS.from_documents(
-                    documents=[],  # Empty initially
+                # Create a dummy document to initialize the structure
+                dummy_text = "This is a temporary document for initialization"
+                
+                # Use from_texts which handles initialization properly
+                self.vector_store = FAISS.from_texts(
+                    texts=[dummy_text],
                     embedding=self.embedding_function,
-                    distance_strategy=self.metric_mapping[self.distance_function]
+                    metadatas=[{"temporary": True}]
                 )
+                
+                # Then clear it to have a truly empty index
+                temp_id = list(self.vector_store.docstore._dict.keys())[0]
+                self.vector_store.delete([temp_id])
                 
                 # Reset metadata
                 self.document_metadatas = {}
