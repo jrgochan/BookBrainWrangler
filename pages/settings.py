@@ -203,10 +203,29 @@ def render_ocr_settings():
         
         # PyTesseract-specific settings
         if ocr_engine == "pytesseract":
+            # Get platform-appropriate help text
+            import platform
+            system = platform.system().lower()
+            
+            if system == 'windows':
+                tesseract_help = "Path to Tesseract executable (e.g., C:\\Program Files\\Tesseract-OCR\\tesseract.exe)"
+                placeholder = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+            elif system == 'linux':
+                tesseract_help = "Path to Tesseract executable (usually /usr/bin/tesseract or /usr/local/bin/tesseract)"
+                placeholder = "/usr/bin/tesseract"
+            elif system == 'darwin':  # macOS
+                tesseract_help = "Path to Tesseract executable (usually /usr/local/bin/tesseract or /opt/homebrew/bin/tesseract)"
+                placeholder = "/usr/local/bin/tesseract"
+            else:
+                tesseract_help = "Path to Tesseract executable"
+                placeholder = "tesseract"
+            
+            # Display the appropriate input field with platform-specific help text
             tesseract_path = st.text_input(
                 "Tesseract executable path",
-                value=current_settings.get('tesseract_path', r'C:\Program Files\Tesseract-OCR\tesseract.exe'),
-                help="Path to Tesseract executable (Windows only, leave default on Linux/Mac)"
+                value=current_settings.get('tesseract_path', ''),
+                placeholder=placeholder,
+                help=tesseract_help
             )
         
         engine_submit_button = st.form_submit_button("Update OCR Engine")

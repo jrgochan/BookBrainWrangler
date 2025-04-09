@@ -108,6 +108,20 @@ def initialize_session_state():
     
     # OCR settings
     if 'ocr_settings' not in st.session_state:
+        # Detect the operating system
+        import platform
+        system = platform.system().lower()
+        
+        # Set a default Tesseract path based on the platform
+        default_tesseract_path = ""
+        if system == 'windows':
+            default_tesseract_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        elif system == 'linux':
+            default_tesseract_path = '/usr/bin/tesseract'
+        elif system == 'darwin':  # macOS
+            default_tesseract_path = '/usr/local/bin/tesseract'
+            
+        # Initialize OCR settings
         st.session_state.ocr_settings = {
             'show_current_image': True,
             'show_extracted_text': True,
@@ -115,7 +129,7 @@ def initialize_session_state():
             'display_interval': 5,  # show every 5th page
             'ocr_engine': 'pytesseract',  # Default OCR engine
             'languages': ['en'],  # Default language for EasyOCR
-            'tesseract_path': r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Default path for PyTesseract
+            'tesseract_path': default_tesseract_path  # Platform-specific default path
         }
         initialized_items.append("ocr_settings")
     

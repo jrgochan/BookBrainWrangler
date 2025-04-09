@@ -54,10 +54,14 @@ class DocumentProcessor:
         
         # Initialize OCR engines conditionally
         if self.ocr_engine == "pytesseract":
-            # Set the path to the Tesseract executable if it exists in settings
-            tesseract_path = self.ocr_settings.get('tesseract_path', r'C:\Program Files\Tesseract-OCR\tesseract.exe')
-            if os.path.exists(tesseract_path):
+            # Auto-detect Tesseract path based on platform
+            tesseract_path = self._detect_tesseract_path(self.ocr_settings)
+            if tesseract_path:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
+                logger.info(f"Using Tesseract executable at: {tesseract_path}")
+            else:
+                logger.warning("Tesseract path not found. Using system default, which may not work.")
+                
         elif self.ocr_engine == "easyocr" and EASYOCR_AVAILABLE:
             # Initialize EasyOCR reader with languages from settings or default to English
             languages = self.ocr_settings.get('languages', ['en'])
@@ -512,6 +516,68 @@ class DocumentProcessor:
         
         return metadata
     
+    def _detect_tesseract_path(self, settings):
+        """
+        Auto-detect Tesseract executable path based on platform.
+        
+        Args:
+            settings: Dictionary containing OCR settings
+            
+        Returns:
+            String path to Tesseract executable or None if not found
+        """
+        # First check if user provided a path in settings
+        if settings and 'tesseract_path' in settings:
+            user_path = settings['tesseract_path']
+            if os.path.exists(user_path):
+                logger.info(f"Using user-provided Tesseract path: {user_path}")
+                return user_path
+        
+        # Detect operating system
+        import platform
+        system = platform.system().lower()
+        
+        # Define common Tesseract installation paths by platform
+        common_paths = {
+            'windows': [
+                r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+                r'C:\Tesseract-OCR\tesseract.exe',
+            ],
+            'linux': [
+                '/usr/bin/tesseract',
+                '/usr/local/bin/tesseract',
+            ],
+            'darwin': [  # macOS
+                '/usr/local/bin/tesseract',
+                '/opt/homebrew/bin/tesseract',
+                '/opt/local/bin/tesseract',
+            ]
+        }
+        
+        # Get list of paths to check for current platform
+        paths_to_check = common_paths.get(system, [])
+        
+        # Check if Tesseract is in the system PATH
+        try:
+            import shutil
+            system_path = shutil.which('tesseract')
+            if system_path:
+                logger.info(f"Found Tesseract in system PATH: {system_path}")
+                return system_path
+        except Exception as e:
+            logger.warning(f"Error checking system PATH for Tesseract: {str(e)}")
+        
+        # Check common installation locations
+        for path in paths_to_check:
+            if os.path.exists(path):
+                logger.info(f"Found Tesseract at common location: {path}")
+                return path
+        
+        # If we get here, we couldn't find Tesseract
+        logger.warning(f"Could not find Tesseract executable on {system}")
+        return None
+        
     def _perform_ocr(self, image):
         """
         Perform OCR on an image using the selected OCR engine.
