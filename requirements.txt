@@ -44,3 +44,4 @@ easyocr
 easyocr
 numpy
 pytesseract
+faiss-cpu
