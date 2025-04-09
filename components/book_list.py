@@ -27,14 +27,13 @@ def render_book_list(books, on_select=None, on_delete=None, on_edit=None, on_tog
     if thumbnail_cache is None and 'thumbnail_cache' in st.session_state:
         thumbnail_cache = st.session_state.thumbnail_cache
     
-    # Create a grid layout
-    num_cols = 3
-    cols = st.columns(num_cols)
-    
-    # Render each book in the grid
-    for i, book in enumerate(books):
-        with cols[i % num_cols]:
-            with st.container(border=True):
+    # Render books as a wide list
+    for book in books:
+        with st.container(border=True):
+            # Use columns for a horizontal layout
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
                 # Book title and author
                 st.markdown(f"### {book['title']}")
                 st.caption(f"by {book['author']}")
@@ -44,44 +43,49 @@ def render_book_list(books, on_select=None, on_delete=None, on_edit=None, on_tog
                     category_text = ", ".join(book['categories'])
                     st.markdown(f"*{category_text}*")
                 
-                # Actions row with buttons
-                # Create a more organized action row with 3 columns
-                action_col1, action_col2, action_col3 = st.columns(3)
+                # Knowledge base status indicator
+                if indexed_books is not None:
+                    is_indexed = book['id'] in indexed_books
+                    status_color = "green" if is_indexed else "gray"
+                    status_text = "In Knowledge Base" if is_indexed else "Not in Knowledge Base"
+                    st.markdown(f"<span style='color:{status_color};font-size:0.8em;'>●</span> <span style='font-size:0.8em;'>{status_text}</span>", unsafe_allow_html=True)
+            
+            with col2:
+                # Actions column with stacked buttons
+                button_col1, button_col2, button_col3 = st.columns(3)
                 
-                with action_col1:
+                with button_col1:
                     if on_select:
                         if st.button("View", key=f"view_{book['id']}", use_container_width=True):
                             on_select(book['id'])
                 
-                with action_col2:
+                with button_col2:
                     if on_edit:
                         # Use a primary button for edit to make it stand out
-                        if st.button("Edit", key=f"edit_{book['id']}", use_container_width=True):
+                        if st.button("Edit", key=f"edit_{book['id']}", use_container_width=True, type="primary"):
                             on_edit(book['id'])
                 
-                with action_col3:
+                with button_col3:
                     if on_delete:
-                        # Use a "danger" styled button for delete
-                        btn_style = "color: white; background-color: #ff4b4b; border: none; border-radius: 4px; padding: 0.25rem 0.75rem; width: 100%; cursor: pointer;"
-                        
                         # Check if this book is pending deletion confirmation
                         is_pending_delete = ('confirm_delete' in st.session_state and 
                                            st.session_state.confirm_delete == book['id'])
                         
                         # Different text based on confirmation status
                         btn_text = "Confirm" if is_pending_delete else "Delete"
+                        btn_type = "primary" if is_pending_delete else "secondary"
                         
-                        # Create a styled button since st.button doesn't support danger type
-                        if st.button(btn_text, key=f"delete_{book['id']}", use_container_width=True):
+                        if st.button(btn_text, key=f"delete_{book['id']}", use_container_width=True, type=btn_type):
                             on_delete(book['id'])
                 
-                # Knowledge base toggle in a separate row for clarity
+                # Knowledge base toggle 
                 if on_toggle_kb and indexed_books is not None:
                     is_indexed = book['id'] in indexed_books
-                    # Create a container for the toggle to ensure consistent spacing
                     with st.container():
+                        st.write("")  # Add a little spacing
+                        toggle_label = "Remove from KB" if is_indexed else "Add to KB"
                         if st.toggle(
-                            "Add to Knowledge Base", 
+                            toggle_label, 
                             value=is_indexed, 
                             key=f"kb_toggle_{book['id']}"
                         ):

@@ -483,7 +483,7 @@ def render_library_section(book_manager):
 
 def render_edit_modal(book_manager):
     """
-    Render the book editing modal.
+    Render the enhanced book editing interface with tabs.
     
     Args:
         book_manager: The BookManager instance
@@ -491,30 +491,203 @@ def render_edit_modal(book_manager):
     if 'book_to_edit' in st.session_state and st.session_state.book_to_edit:
         book = book_manager.get_book(st.session_state.book_to_edit)
         if book:
-            st.header(f"Edit Book: {book['title']}")
+            st.header(f"Book Management: {book['title']}")
             
-            new_title = st.text_input("Book Title", book['title'])
-            new_author = st.text_input("Book Author", book['author'])
-            new_categories = st.text_input("Categories (comma-separated)", ", ".join(book['categories']))
+            # Create tabs for different editing functions
+            basic_tab, content_tab, kb_tab, ai_tab = st.tabs([
+                "Basic Info", 
+                "Content Preview", 
+                "Knowledge Base Status", 
+                "Reanalyze with AI"
+            ])
             
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Save Changes", type="primary"):
-                    categories = [cat.strip() for cat in new_categories.split(",") if cat.strip()]
-                    book_manager.update_book(
-                        book_id=book['id'],
-                        title=new_title,
-                        author=new_author,
-                        categories=categories
-                    )
-                    st.success("Book updated successfully!")
+            # Basic Info Tab
+            with basic_tab:
+                st.subheader("Edit Book Metadata")
+                
+                new_title = st.text_input("Book Title", book['title'])
+                new_author = st.text_input("Book Author", book['author'])
+                new_categories = st.text_input("Categories (comma-separated)", ", ".join(book['categories']))
+                
+                # Additional metadata fields
+                col1, col2 = st.columns(2)
+                with col1:
+                    publication_date = st.date_input("Publication Date", value=None)
+                with col2:
+                    language = st.selectbox("Language", 
+                                           options=["English", "Spanish", "French", "German", "Chinese", "Japanese", "Other"],
+                                           index=0)
+                
+                # Notes field
+                notes = st.text_area("Notes", placeholder="Add any notes about this book...")
+                
+                # Save and Cancel buttons
+                save_col, cancel_col = st.columns(2)
+                with save_col:
+                    if st.button("Save Changes", type="primary", use_container_width=True):
+                        categories = [cat.strip() for cat in new_categories.split(",") if cat.strip()]
+                        book_manager.update_book(
+                            book_id=book['id'],
+                            title=new_title,
+                            author=new_author,
+                            categories=categories
+                        )
+                        st.success("Book updated successfully!")
+                        
+                        # Clear the edit state and refresh
+                        del st.session_state.book_to_edit
+                        st.rerun()
+                
+                with cancel_col:
+                    if st.button("Cancel", use_container_width=True):
+                        # Clear the edit state and refresh
+                        del st.session_state.book_to_edit
+                        st.rerun()
+            
+            # Content Preview Tab
+            with content_tab:
+                st.subheader("Book Content Preview")
+                
+                # Get book content
+                content = book_manager.get_book_content(book['id'])
+                
+                if content:
+                    # Show content stats
+                    word_count = len(content.split())
+                    char_count = len(content)
                     
-                    # Clear the edit state and refresh
-                    del st.session_state.book_to_edit
-                    st.rerun()
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Word Count", f"{word_count:,}")
+                    with col2:
+                        st.metric("Character Count", f"{char_count:,}")
+                    
+                    # Preview of first 1000 characters
+                    preview_length = min(1000, len(content))
+                    preview_text = content[:preview_length] + ("..." if len(content) > preview_length else "")
+                    
+                    st.markdown("### Content Preview")
+                    st.text_area("First 1000 characters", value=preview_text, height=300, disabled=True)
+                    
+                    # Option to export content
+                    st.download_button(
+                        label="Export Content as TXT",
+                        data=content,
+                        file_name=f"{book['title']}_content.txt",
+                        mime="text/plain"
+                    )
+                else:
+                    st.warning("No content available for this book.")
             
-            with col2:
-                if st.button("Cancel"):
-                    # Clear the edit state and refresh
-                    del st.session_state.book_to_edit
-                    st.rerun()
+            # Knowledge Base Status Tab
+            with kb_tab:
+                st.subheader("Knowledge Base Integration")
+                
+                # Check if book is in KB
+                try:
+                    from knowledge_base import KnowledgeBase
+                    kb = KnowledgeBase()
+                    is_indexed = kb.is_document_indexed(book['id'])
+                    
+                    if is_indexed:
+                        st.success("This book is currently indexed in the Knowledge Base.")
+                        
+                        # Show chunking info
+                        chunks = kb.get_document_chunks(book['id'])
+                        if chunks:
+                            st.metric("Number of Text Chunks", len(chunks))
+                            
+                            # Option to view chunks
+                            if st.checkbox("View Chunks"):
+                                for i, chunk in enumerate(chunks[:10]):  # Show first 10 chunks
+                                    with st.expander(f"Chunk {i+1}"):
+                                        st.write(chunk.page_content[:200] + "..." if len(chunk.page_content) > 200 else chunk.page_content)
+                                
+                                if len(chunks) > 10:
+                                    st.info(f"Showing 10 out of {len(chunks)} chunks. All chunks will be used for AI responses.")
+                        
+                        # Remove from KB option
+                        if st.button("Remove from Knowledge Base"):
+                            kb.remove_document(book['id'])
+                            st.warning("Book has been removed from the Knowledge Base.")
+                            st.rerun()
+                    else:
+                        st.warning("This book is not currently indexed in the Knowledge Base.")
+                        
+                        # Add to KB option
+                        if st.button("Add to Knowledge Base", type="primary"):
+                            try:
+                                kb.add_document(book['id'], book_manager)
+                                st.success("Book has been added to the Knowledge Base.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error adding book to Knowledge Base: {str(e)}")
+                except Exception as e:
+                    st.error(f"Error accessing Knowledge Base: {str(e)}")
+            
+            # Reanalyze with AI Tab
+            with ai_tab:
+                st.subheader("AI Analysis & Insights")
+                
+                # AI Model selection
+                ai_model = st.selectbox(
+                    "Select AI Model", 
+                    options=["Ollama - Llama2", "Ollama - Mistral", "OpenAI - GPT-3.5", "OpenAI - GPT-4"],
+                    index=0
+                )
+                
+                # Analysis options
+                st.write("#### Select Analysis Types")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    extract_themes = st.checkbox("Extract Key Themes", value=True)
+                    summarize = st.checkbox("Generate Summary", value=True)
+                    extract_entities = st.checkbox("Identify Named Entities", value=False)
+                
+                with col2:
+                    sentiment = st.checkbox("Sentiment Analysis", value=False)
+                    key_quotes = st.checkbox("Extract Notable Quotes", value=False)
+                    metadata_enhance = st.checkbox("Enhance Metadata", value=True)
+                
+                # Analysis Depth
+                analysis_depth = st.slider("Analysis Depth", min_value=1, max_value=5, value=3, 
+                                         help="Higher values produce more detailed analysis but take longer")
+                
+                # Run Analysis button
+                if st.button("Run AI Analysis", type="primary"):
+                    # This would connect to the AI model and run the analysis
+                    # For now, show a placeholder for the functionality
+                    with st.spinner("Running AI analysis..."):
+                        st.info("AI Analysis would be performed here, connecting to the selected model.")
+                        st.info("This feature requires implementation of the AI integration.")
+                        
+                        # Placeholder for future AI analysis results
+                        st.write("#### AI Analysis Results")
+                        st.warning("This is a placeholder. The actual AI analysis needs to be implemented.")
+                        
+                        # Example of how the UI would look
+                        with st.expander("Analysis Summary"):
+                            st.write("The AI would provide a summary of the analysis here...")
+                
+                # Guide for AI Analysis
+                with st.expander("About AI Analysis"):
+                    st.markdown("""
+                    **AI Analysis** allows you to extract deeper insights from your books using advanced language models.
+                    
+                    The AI can:
+                    - Identify major themes and concepts
+                    - Generate concise summaries
+                    - Extract key entities (people, places, organizations)
+                    - Analyze sentiment and emotional tone
+                    - Identify notable or quotable passages
+                    - Enhance metadata with additional relevant tags
+                    
+                    This feature requires proper configuration of the AI model connections.
+                    """)
+                    
+            # Add button to return to book list at the bottom of all tabs
+            st.divider()
+            if st.button("Return to Book List", use_container_width=True):
+                del st.session_state.book_to_edit
+                st.rerun()
