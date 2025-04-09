@@ -55,7 +55,7 @@ def render_sidebar():
             st.session_state.current_page = "home"
             st.rerun()
         
-        if st.button("📄 Book Management", key="sidebar_book_mgmt_btn", use_container_width=True):
+        if st.button("📄 Knowledge Management", key="sidebar_book_mgmt_btn", use_container_width=True):
             st.session_state.current_page = "book_management"
             st.rerun()
         
@@ -100,7 +100,7 @@ def render_home_page():
     - **Search and explore** your knowledge base
     - **Chat with AI** about your documents
     
-    Get started by uploading documents in the Book Management section.
+    Get started by uploading documents in the Knowledge Management section.
     """)
     
     # Quick access buttons
@@ -121,14 +121,14 @@ def render_home_page():
             st.session_state.current_page = "chat"
             st.rerun()
 
-# Render book management page
+# Render knowledge management page
 def render_book_management_page():
-    """Render the book management page."""
+    """Render the knowledge management page."""
     # Import the console component
     from components.console import render_console, create_processing_logger
     import pandas as pd
     
-    st.title("Book Management")
+    st.title("Knowledge Management")
     st.subheader("Upload, view, and manage your documents")
     
     # Initialize processing logs in session state if needed
@@ -373,7 +373,7 @@ def render_chat_page():
     if kb_stats.get("document_count", 0) == 0:
         st.warning("Your knowledge base is empty. Please add documents first.")
         
-        if st.button("Go to Book Management", key="chat_to_book_management_btn"):
+        if st.button("Go to Knowledge Management", key="chat_to_book_management_btn"):
             st.session_state.current_page = "book_management"
             st.rerun()
         
