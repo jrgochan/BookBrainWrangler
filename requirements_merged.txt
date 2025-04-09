@@ -1,0 +1,40 @@
+# requirements.txt
+
+# Core requirements
+langchain>=0.3.23
+langchain-community>=0.3.21
+langchain-text-splitters>=0.3.8
+loguru>=0.7.3        # Keep only one loguru line
+torch>=2.6.0
+pdf2image>=1.17.0
+pypdf2>=3.0.1
+pytesseract>=0.3.13
+requests>=2.32.3
+streamlit>=1.44.1
+matplotlib>=3.9.2
+pandas>=2.2.3
+plotly>=5.24.1
+scikit-learn>=1.6.1
+nltk>=3.9.1
+wordcloud>=1.9.4
+numpy>=1.26.4
+attr>=0.3.2
+ConfigParser>=7.2.0
+contextlib2>=21.6.0
+cryptography>=44.0.2
+docutils>=0.21.2
+filelock>=3.18.0
+importlib_metadata>=8.6.1
+ipython>=8.12.3
+ipywidgets>=8.1.5
+Jinja2>=3.1.6
+python-docx>=1.1.2
+sentence-transformers>=4.0.2
+docx>=0.2.4
+
+# Specific package constraints
+faiss-cpu>=1.10.0      # Pinned to version that works with Python 3.12
+langchain-faiss>=0.0.4 # Pinned, compatible with faiss-cpu
+
+# Optional - install if needed
+altair
