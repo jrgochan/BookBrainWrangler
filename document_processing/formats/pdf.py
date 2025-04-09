@@ -148,14 +148,51 @@ class PDFProcessor:
                     if progress_callback:
                         progress_callback(i / page_count, f"Extracting text from page {i+1}/{page_count}")
                     
-                    # Extract text from page
-                    page_text = page.extract_text() or ""
-                    text += page_text + "\n\n"
+                    try:
+                        # Extract text from page
+                        page_text = page.extract_text() or ""
+                        
+                        # Log page text length for debugging
+                        if len(page_text) == 0:
+                            logger.warning(f"No text extracted from page {i+1}")
+                        else:
+                            logger.debug(f"Extracted {len(page_text)} characters from page {i+1}")
+                            
+                        text += page_text + "\n\n"
+                    except Exception as page_error:
+                        logger.error(f"Error extracting text from page {i+1}: {str(page_error)}")
+                        # Continue with next page despite error
                 
-                # Log success
-                logger.info(f"Extracted text from {page_count} pages in {file_path}")
+                # Check if we actually extracted any text
+                text = text.strip()
+                if len(text) == 0:
+                    logger.warning(f"No text extracted from PDF using PyPDF2, attempting OCR fallback")
+                    try:
+                        # Import OCR module for fallback
+                        from document_processing.ocr import OCRProcessor
+                        
+                        # Create OCR processor
+                        ocr = OCRProcessor()
+                        
+                        # Extract text using OCR
+                        ocr_result = ocr.process_file(file_path, progress_callback=progress_callback)
+                        
+                        if ocr_result and 'text' in ocr_result and ocr_result['text']:
+                            text = ocr_result['text']
+                            logger.info(f"Successfully extracted {len(text)} characters using OCR fallback")
+                        else:
+                            logger.warning("OCR fallback also failed to extract text")
+                    except Exception as ocr_error:
+                        logger.error(f"Error during OCR fallback: {str(ocr_error)}")
+                
+                # Log result
+                if len(text) > 0:
+                    logger.info(f"Successfully extracted {len(text)} characters from {page_count} pages in {file_path}")
+                else:
+                    logger.warning(f"Failed to extract any text from {file_path}")
+                    
                 return {
-                    'text': text.strip(),
+                    'text': text,
                     'page_count': page_count
                 }
                 

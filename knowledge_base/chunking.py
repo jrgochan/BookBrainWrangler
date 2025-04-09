@@ -140,7 +140,7 @@ def chunk_document(
     
     # Create chunks with metadata
     chunks = []
-    for i, chunk_text in enumerate(text_chunks):
+    for i, chunk_content in enumerate(text_chunks):
         # Clone metadata for each chunk
         chunk_metadata = metadata.copy()
         
@@ -154,7 +154,7 @@ def chunk_document(
         # Create chunk document
         chunk = {
             "id": f"{doc_id}_chunk_{i}" if doc_id else f"chunk_{i}",
-            "text": chunk_text,
+            "text": chunk_content,
             "metadata": chunk_metadata
         }
         
