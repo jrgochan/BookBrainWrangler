@@ -40,3 +40,4 @@ langchain-faiss>=0.0.4 # Pinned, compatible with faiss-cpu
 altair
 loguru
 numpy
+easyocr

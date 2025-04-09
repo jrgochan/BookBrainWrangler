@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.hdf5
     pkgs.vim
     pkgs.sqlite
     pkgs.tk

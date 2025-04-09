@@ -58,7 +58,17 @@ def initialize_components():
         book_manager = BookManager()
         
         logger.debug("Initializing DocumentProcessor")
-        document_processor = DocumentProcessor()
+        # Get OCR settings from session state if available
+        if 'ocr_settings' in st.session_state and isinstance(st.session_state.ocr_settings, dict):
+            ocr_engine = st.session_state.ocr_settings.get('ocr_engine', 'pytesseract')
+            logger.debug(f"Initializing DocumentProcessor with OCR engine: {ocr_engine}")
+            document_processor = DocumentProcessor(
+                ocr_engine=ocr_engine,
+                ocr_settings=st.session_state.ocr_settings
+            )
+        else:
+            logger.debug("Initializing DocumentProcessor with default settings")
+            document_processor = DocumentProcessor()
         
         logger.debug("Initializing KnowledgeBase")
         knowledge_base = KnowledgeBase()
@@ -103,6 +113,9 @@ def initialize_session_state():
             'show_extracted_text': True,
             'confidence_threshold': 70.0,  # percentage
             'display_interval': 5,  # show every 5th page
+            'ocr_engine': 'pytesseract',  # Default OCR engine
+            'languages': ['en'],  # Default language for EasyOCR
+            'tesseract_path': r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Default path for PyTesseract
         }
         initialized_items.append("ocr_settings")
     

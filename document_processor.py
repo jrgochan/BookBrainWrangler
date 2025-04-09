@@ -9,6 +9,7 @@ import base64
 import json
 import time
 import requests
+import numpy as np
 from urllib.parse import urlparse
 import pathlib
 from typing import Dict, List, Any, Optional, Union, Tuple, Callable
@@ -18,17 +19,52 @@ from pdf2image import convert_from_path
 import docx
 from PIL import Image
 
+# Import EasyOCR conditionally to handle environments where it might not be available
+try:
+    import easyocr
+    EASYOCR_AVAILABLE = True
+except ImportError:
+    EASYOCR_AVAILABLE = False
+
 from utils.logger import get_logger
 
 # Get a logger for this module
 logger = get_logger(__name__)
 
+# OCR Engine options
+OCR_ENGINES = {
+    "pytesseract": "PyTesseract",
+    "easyocr": "EasyOCR"
+}
+
 class DocumentProcessor:
-    def __init__(self):
-        """Initialize the document processor with default settings."""
-        # Set the path to the Tesseract executable
-        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    def __init__(self, ocr_engine="pytesseract", ocr_settings=None):
+        """
+        Initialize the document processor with specified settings.
         
+        Args:
+            ocr_engine: The OCR engine to use ('pytesseract' or 'easyocr')
+            ocr_settings: Dictionary of OCR-specific settings
+        """
+        # Set default OCR settings if none provided
+        self.ocr_settings = ocr_settings or {}
+        
+        # Set the OCR engine
+        self.ocr_engine = ocr_engine if ocr_engine in OCR_ENGINES else "pytesseract"
+        
+        # Initialize OCR engines conditionally
+        if self.ocr_engine == "pytesseract":
+            # Set the path to the Tesseract executable if it exists in settings
+            tesseract_path = self.ocr_settings.get('tesseract_path', r'C:\Program Files\Tesseract-OCR\tesseract.exe')
+            if os.path.exists(tesseract_path):
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        elif self.ocr_engine == "easyocr" and EASYOCR_AVAILABLE:
+            # Initialize EasyOCR reader with languages from settings or default to English
+            languages = self.ocr_settings.get('languages', ['en'])
+            self.easyocr_reader = easyocr.Reader(languages)
+            logger.info(f"Initialized EasyOCR with languages: {languages}")
+        
+        # Set metadata extraction patterns
         self.metadata_patterns = {
             'title': [
                 r'title:\s*([^\n]+)',
@@ -145,10 +181,11 @@ class DocumentProcessor:
                         # Convert PDF page to image
                         images = convert_from_path(pdf_path, first_page=i+1, last_page=i+1)
                         if images:
-                            # Use OCR to extract text from the image
+                            # Use selected OCR engine to extract text from the image
                             img = images[0]
-                            extracted_text = pytesseract.image_to_string(img)
-                            confidence = float(pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)['conf'][0])
+                            
+                            # Perform OCR based on selected engine
+                            extracted_text, confidence = self._perform_ocr(img)
                             
                             # Save image for UI feedback
                             if include_images or progress_callback:
@@ -475,6 +512,72 @@ class DocumentProcessor:
         
         return metadata
     
+    def _perform_ocr(self, image):
+        """
+        Perform OCR on an image using the selected OCR engine.
+        
+        Args:
+            image: PIL Image object to perform OCR on
+            
+        Returns:
+            Tuple of (extracted_text, confidence)
+        """
+        extracted_text = ""
+        confidence = 0.0
+        
+        try:
+            if self.ocr_engine == "pytesseract":
+                # Use PyTesseract for OCR
+                extracted_text = pytesseract.image_to_string(image)
+                # Get confidence score
+                data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+                confidences = [float(conf) for conf in data['conf'] if conf != '-1']
+                confidence = sum(confidences) / len(confidences) if confidences else 0.0
+                logger.debug(f"PyTesseract OCR: {len(extracted_text)} chars, confidence: {confidence:.2f}%")
+                
+            elif self.ocr_engine == "easyocr" and EASYOCR_AVAILABLE:
+                # Use EasyOCR for OCR
+                if not hasattr(self, 'easyocr_reader'):
+                    # Initialize reader if not already done
+                    languages = self.ocr_settings.get('languages', ['en'])
+                    self.easyocr_reader = easyocr.Reader(languages)
+                    logger.info(f"Initialized EasyOCR with languages: {languages}")
+                
+                # Convert PIL image to numpy array for EasyOCR
+                img_array = np.array(image)
+                
+                # Perform OCR
+                results = self.easyocr_reader.readtext(img_array)
+                
+                # Extract text and confidence from results
+                if results:
+                    texts = []
+                    confidences = []
+                    for detection in results:
+                        bbox, text, conf = detection
+                        texts.append(text)
+                        confidences.append(conf)
+                    
+                    extracted_text = " ".join(texts)
+                    confidence = sum(confidences) / len(confidences) * 100 if confidences else 0.0
+                    logger.debug(f"EasyOCR: {len(extracted_text)} chars, confidence: {confidence:.2f}%")
+                else:
+                    logger.warning("EasyOCR returned no results")
+            else:
+                # Fallback to PyTesseract if EasyOCR is unavailable or unknown engine specified
+                extracted_text = pytesseract.image_to_string(image)
+                data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+                confidences = [float(conf) for conf in data['conf'] if conf != '-1']
+                confidence = sum(confidences) / len(confidences) if confidences else 0.0
+                logger.warning(f"Fallback to PyTesseract due to unavailability of {self.ocr_engine}")
+            
+        except Exception as e:
+            logger.error(f"Error in OCR processing: {str(e)}")
+            # Return empty text and zero confidence on error
+            return "", 0.0
+            
+        return extracted_text, confidence
+
     def get_page_count(self, pdf_path):
         """
         Get the number of pages in a PDF file.

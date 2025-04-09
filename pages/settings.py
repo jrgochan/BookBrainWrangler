@@ -115,16 +115,115 @@ def render_ocr_settings():
     """Render OCR settings section."""
     st.header("OCR Settings")
     
+    # OCR engine options
+    OCR_ENGINES = {
+        "pytesseract": "PyTesseract (Default)",
+        "easyocr": "EasyOCR (Advanced)"
+    }
+    
+    # Import conditionally to check if engines are available
+    try:
+        import easyocr
+        EASYOCR_AVAILABLE = True
+    except ImportError:
+        EASYOCR_AVAILABLE = False
+    
     # Get current OCR settings
     if 'ocr_settings' not in st.session_state:
         st.session_state.ocr_settings = {
             'display_interval': 1,
             'confidence_threshold': 70,
             'show_current_image': True,
-            'show_extracted_text': True
+            'show_extracted_text': True,
+            'ocr_engine': 'pytesseract',
+            'languages': ['en'],
+            'tesseract_path': r'C:\Program Files\Tesseract-OCR\tesseract.exe'
         }
     
     current_settings = st.session_state.ocr_settings
+    
+    # OCR Engine selection
+    st.subheader("OCR Engine Configuration")
+    
+    # Display information about available OCR engines
+    engine_info_col1, engine_info_col2 = st.columns(2)
+    with engine_info_col1:
+        st.info("**PyTesseract**: Standard OCR engine with good accuracy for most documents.")
+    
+    with engine_info_col2:
+        if EASYOCR_AVAILABLE:
+            st.info("**EasyOCR**: Advanced deep learning-based OCR with support for multiple languages.")
+        else:
+            st.error("**EasyOCR**: Not available. It needs to be installed to use this option.")
+    
+    with st.form("ocr_engine_form"):
+        # OCR Engine selection
+        ocr_engine = st.selectbox(
+            "OCR Engine",
+            options=list(OCR_ENGINES.keys()),
+            format_func=lambda x: OCR_ENGINES[x],
+            index=list(OCR_ENGINES.keys()).index(current_settings.get('ocr_engine', 'pytesseract')),
+            help="Select which OCR engine to use for text extraction from images"
+        )
+        
+        # EasyOCR-specific settings
+        if ocr_engine == "easyocr":
+            if not EASYOCR_AVAILABLE:
+                st.warning("EasyOCR is not installed. The system will fall back to PyTesseract.")
+            
+            # Language selection
+            languages_options = {
+                'en': 'English', 
+                'fr': 'French',
+                'es': 'Spanish',
+                'de': 'German',
+                'it': 'Italian',
+                'pt': 'Portuguese',
+                'ru': 'Russian',
+                'ja': 'Japanese',
+                'ko': 'Korean',
+                'zh': 'Chinese (Simplified)',
+                'zh_tra': 'Chinese (Traditional)',
+                'ar': 'Arabic'
+            }
+            
+            # Select languages
+            selected_languages = st.multiselect(
+                "Languages to detect",
+                options=list(languages_options.keys()),
+                default=current_settings.get('languages', ['en']),
+                format_func=lambda x: languages_options.get(x, x),
+                help="Select languages to detect (English is recommended as primary language)"
+            )
+            
+            # Ensure at least one language is selected
+            if not selected_languages:
+                selected_languages = ['en']
+                st.info("At least one language must be selected. Defaulting to English.")
+        
+        # PyTesseract-specific settings
+        if ocr_engine == "pytesseract":
+            tesseract_path = st.text_input(
+                "Tesseract executable path",
+                value=current_settings.get('tesseract_path', r'C:\Program Files\Tesseract-OCR\tesseract.exe'),
+                help="Path to Tesseract executable (Windows only, leave default on Linux/Mac)"
+            )
+        
+        engine_submit_button = st.form_submit_button("Update OCR Engine")
+        
+        if engine_submit_button:
+            # Update engine settings
+            new_settings = current_settings.copy()
+            new_settings['ocr_engine'] = ocr_engine
+            
+            if ocr_engine == "easyocr":
+                new_settings['languages'] = selected_languages
+            
+            if ocr_engine == "pytesseract":
+                new_settings['tesseract_path'] = tesseract_path
+            
+            st.session_state.ocr_settings = new_settings
+            st.success(f"OCR engine updated to {OCR_ENGINES[ocr_engine]}!")
     
     # OCR visualization settings
     st.subheader("Document Processing Visualization")
@@ -158,18 +257,20 @@ def render_ocr_settings():
             help="Pages with OCR confidence below this threshold will be flagged as low quality"
         )
         
-        submit_button = st.form_submit_button("Save OCR Settings")
+        submit_button = st.form_submit_button("Save Visualization Settings")
         
         if submit_button:
-            # Update OCR settings
-            st.session_state.ocr_settings = {
+            # Update visualization settings but keep engine settings intact
+            new_settings = st.session_state.ocr_settings.copy()
+            new_settings.update({
                 'display_interval': display_interval,
                 'confidence_threshold': confidence_threshold,
                 'show_current_image': show_current_image,
                 'show_extracted_text': show_extracted_text
-            }
+            })
             
-            st.success("OCR settings updated!")
+            st.session_state.ocr_settings = new_settings
+            st.success("OCR visualization settings updated!")
 
 def render_display_settings():
     """Render display settings section."""
