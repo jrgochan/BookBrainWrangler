@@ -8,6 +8,7 @@ import os
 import time
 import tempfile
 import shutil
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 from utils.ui_helpers import show_progress_bar
@@ -213,8 +214,47 @@ def render_upload_section(book_manager, document_processor):
                 
             with process_tabs[2]:
                 st.caption("This tab shows technical details about the processing")
-                log_container = st.empty()
+                
+                # Create a fixed-height terminal-like container with scrolling
+                terminal_container = st.container()
+                with terminal_container:
+                    # Apply custom CSS for terminal-like appearance
+                    st.markdown("""
+                    <style>
+                    .terminal-box {
+                        background-color: #0e1117;
+                        color: #16c60c;
+                        font-family: 'Courier New', monospace;
+                        border: 1px solid #4d4d4d;
+                        border-radius: 5px;
+                        padding: 10px;
+                        height: 350px;
+                        overflow-y: auto;
+                        white-space: pre-wrap;
+                        word-break: break-word;
+                        line-height: 1.3;
+                        font-size: 0.9rem;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create empty element to hold terminal output
+                    terminal_output = st.empty()
+                
+                # Initialize log messages list with timestamp
                 log_messages = []
+                current_time = datetime.now().strftime("%H:%M:%S")
+                log_messages.append(f"[{current_time}] 🖥️ Terminal initialized")
+                log_messages.append(f"[{current_time}] 🔄 Starting book processing...")
+                
+                # Helper function to update the terminal display with auto-scroll
+                def update_terminal():
+                    # Keep only the last 100 messages to prevent excessive length
+                    display_messages = log_messages[-100:] if len(log_messages) > 100 else log_messages
+                    terminal_content = "\n".join(display_messages)
+                    
+                    # Update the terminal display
+                    terminal_output.markdown(f'<div class="terminal-box">{terminal_content}</div>', unsafe_allow_html=True)
         
         # Process the book with status updates
         try:
@@ -229,9 +269,10 @@ def render_upload_section(book_manager, document_processor):
             file_type = "PDF" if file_ext == '.pdf' else "DOCX" if file_ext == '.docx' else f"Document ({file_ext})"
             file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
             
-            log_messages.append(f"📄 File: {uploaded_file.name} ({file_size_mb:.2f} MB)")
-            log_messages.append(f"📋 Type: {file_type}")
-            log_container.markdown("  \n".join(log_messages))
+            current_time = datetime.now().strftime("%H:%M:%S")
+            log_messages.append(f"[{current_time}] 📄 File: {uploaded_file.name} ({file_size_mb:.2f} MB)")
+            log_messages.append(f"[{current_time}] 📋 Type: {file_type}")
+            update_terminal()
             
             # Define progress callback function with enhanced UI feedback
             def update_progress(current, total, message):
@@ -246,9 +287,10 @@ def render_upload_section(book_manager, document_processor):
                     status_text = message.get("text", "Processing...")
                     status_container.markdown(f"**Status**: {status_text}")
                     
-                    # Add to log
-                    log_messages.append(f"🔄 {status_text}")
-                    log_container.markdown("  \n".join(log_messages))
+                    # Add to log with timestamp
+                    current_time = datetime.now().strftime("%H:%M:%S")
+                    log_messages.append(f"[{current_time}] 🔄 {status_text}")
+                    update_terminal()
                     
                     # Handle OCR-specific updates
                     if "current_image" in message and st.session_state.ocr_settings['show_current_image']:
@@ -286,20 +328,23 @@ def render_upload_section(book_manager, document_processor):
                         if confidence < threshold:
                             conf_text = f"⚠️ {conf_text} (Low Quality)"
                             ocr_confidence_container.error(conf_text)
-                            # Add to log
-                            log_messages.append(f"⚠️ Low quality detection: {confidence:.1f}% confidence (below threshold of {threshold}%)")
+                            # Add to log with timestamp
+                            current_time = datetime.now().strftime("%H:%M:%S")
+                            log_messages.append(f"[{current_time}] ⚠️ Low quality detection: {confidence:.1f}% confidence (below threshold of {threshold}%)")
                         else:
                             ocr_confidence_container.success(conf_text)
-                            # Add to log
-                            log_messages.append(f"✅ Good quality detection: {confidence:.1f}% confidence")
+                            # Add to log with timestamp
+                            current_time = datetime.now().strftime("%H:%M:%S")
+                            log_messages.append(f"[{current_time}] ✅ Good quality detection: {confidence:.1f}% confidence")
                         
-                        log_container.markdown("  \n".join(log_messages))
+                        update_terminal()
                 else:
                     # Simple string message
                     status_container.markdown(f"**Status**: {message}")
-                    # Add to log
-                    log_messages.append(f"ℹ️ {message}")
-                    log_container.markdown("  \n".join(log_messages))
+                    # Add to log with timestamp
+                    current_time = datetime.now().strftime("%H:%M:%S")
+                    log_messages.append(f"[{current_time}] ℹ️ {message}")
+                    update_terminal()
             
             # Process the file with the callback
             status_container.markdown("**Status**: Starting document processing...")
@@ -308,8 +353,9 @@ def render_upload_section(book_manager, document_processor):
             if file_ext == '.pdf':
                 page_count = document_processor.get_page_count(temp_path)
                 info_container.info(f"PDF has {page_count} pages to process")
-                log_messages.append(f"📑 Document has {page_count} pages")
-                log_container.markdown("  \n".join(log_messages))
+                current_time = datetime.now().strftime("%H:%M:%S")
+                log_messages.append(f"[{current_time}] 📑 Document has {page_count} pages")
+                update_terminal()
             
             # Extract content - this is the main processing step
             progress_bar.progress(10/100, text="Starting document processing...")
@@ -323,12 +369,15 @@ def render_upload_section(book_manager, document_processor):
             # Add book to database
             progress_bar.progress(90/100, text="Adding book to database...")
             status_container.markdown("**Status**: Adding book to database...")
-            log_messages.append("📝 Preparing to save book to database")
-            log_container.markdown("  \n".join(log_messages))
+            current_time = datetime.now().strftime("%H:%M:%S")
+            log_messages.append(f"[{current_time}] 📝 Preparing to save book to database")
+            update_terminal()
             
             # Parse categories
             categories = [cat.strip() for cat in book_category.split(",") if cat.strip()]
-            log_messages.append(f"🏷️ Categories: {', '.join(categories) if categories else 'None'}")
+            current_time = datetime.now().strftime("%H:%M:%S")
+            log_messages.append(f"[{current_time}] 🏷️ Categories: {', '.join(categories) if categories else 'None'}")
+            update_terminal()
             
             # Add to database
             book_id = book_manager.add_book(
@@ -343,9 +392,10 @@ def render_upload_section(book_manager, document_processor):
             progress_bar.progress(100/100, text="Book processing complete!")
             status_container.markdown("**Status**: Book processing complete!")
             
-            # Update log
-            log_messages.append(f"✅ Book added to database with ID: {book_id}")
-            log_container.markdown("  \n".join(log_messages))
+            # Update log with timestamp
+            current_time = datetime.now().strftime("%H:%M:%S")
+            log_messages.append(f"[{current_time}] ✅ Book added to database with ID: {book_id}")
+            update_terminal()
             
             # Mark the process as complete
             process_status.update(label=f"✅ Book '{book_title}' successfully processed!", state="complete")
@@ -381,9 +431,10 @@ def render_upload_section(book_manager, document_processor):
             error_message = str(e)
             status_container.markdown(f"**Status**: Error: {error_message}")
             
-            # Add error to log
-            log_messages.append(f"❌ ERROR: {error_message}")
-            log_container.markdown("  \n".join(log_messages))
+            # Add error to log with timestamp
+            current_time = datetime.now().strftime("%H:%M:%S")
+            log_messages.append(f"[{current_time}] ❌ ERROR: {error_message}")
+            update_terminal()
             
             # Update status to error
             process_status.update(label=f"⚠️ Error processing document", state="error")
