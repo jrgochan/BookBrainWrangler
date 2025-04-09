@@ -214,6 +214,15 @@ class VectorStore:
         """
         return self.vector_store.reset()
         
+    def generate_id(self) -> str:
+        """
+        Generate a unique ID for a document.
+        
+        Returns:
+            A unique string ID
+        """
+        return str(uuid.uuid4())
+        
     @property
     def using_gpu(self) -> bool:
         """

@@ -88,7 +88,7 @@ class PDFProcessor:
         
         try:
             # Define a progress callback handler
-            def send_progress(current, total, message):
+            def send_progress(current, total, message="Processing PDF"):
                 if progress_callback:
                     progress_callback(current / total, message)
                     
