@@ -11,6 +11,36 @@ from utils.logger import get_logger
 # Get a logger for this module
 logger = get_logger(__name__)
 
+def ensure_nltk_resources():
+    """
+    Ensure that necessary NLTK resources are downloaded.
+    This function is called when NLTK functionality is needed.
+    """
+    try:
+        import nltk
+        
+        # List of resources to check and download if needed
+        resources = [
+            ('punkt', 'tokenizers/punkt'),
+            ('stopwords', 'corpora/stopwords')
+        ]
+        
+        # Check and download each resource
+        for resource_name, resource_path in resources:
+            try:
+                nltk.data.find(resource_path)
+                logger.debug(f"NLTK resource '{resource_name}' already available")
+            except LookupError:
+                logger.info(f"Downloading NLTK resource: {resource_name}")
+                nltk.download(resource_name, quiet=True)
+                
+        logger.info("NLTK resources check completed")
+        return True
+    
+    except Exception as e:
+        logger.error(f"Error ensuring NLTK resources: {str(e)}")
+        raise
+
 def cleanup_text(text: str) -> str:
     """
     Clean up text by normalizing whitespace and removing control characters.
@@ -195,7 +225,9 @@ def extract_sentences(text: str, min_length: int = 10, max_length: int = 500) ->
 
 def analyze_word_frequency(text: str, min_word_length: int = 3, 
                           max_words: int = 100,
-                          stop_words: Optional[Set[str]] = None) -> List[Tuple[str, int]]:
+                          stop_words: Optional[Set[str]] = None,
+                          exclude_stopwords: bool = True,
+                          custom_stopwords: Optional[List[str]] = None) -> List[Tuple[str, int]]:
     """
     Analyze word frequency in text and return most common words.
     
@@ -204,10 +236,47 @@ def analyze_word_frequency(text: str, min_word_length: int = 3,
         min_word_length: Minimum length of words to count
         max_words: Maximum number of words to return
         stop_words: Set of stop words to exclude
+        exclude_stopwords: Whether to exclude common stop words
+        custom_stopwords: Additional custom stopwords to exclude
         
     Returns:
         List of (word, frequency) tuples, sorted by frequency (descending)
     """
+    # Build stop words set
+    if exclude_stopwords:
+        try:
+            # Try to use NLTK's comprehensive stopwords
+            ensure_nltk_resources()
+            from nltk.corpus import stopwords
+            nltk_stopwords = set(stopwords.words('english'))
+            
+            # If custom stopwords are provided, add them
+            if custom_stopwords:
+                for word in custom_stopwords:
+                    nltk_stopwords.add(word.lower())
+                    
+            stop_words = nltk_stopwords
+            logger.debug(f"Using NLTK stopwords (total: {len(stop_words)})")
+            
+        except Exception as e:
+            logger.warning(f"Could not use NLTK stopwords, falling back to basic set: {str(e)}")
+            # Fallback to basic stop words if NLTK is not available
+            if stop_words is None:
+                stop_words = set([
+                    'the', 'a', 'an', 'and', 'or', 'but', 'if', 'because', 'as', 'what',
+                    'when', 'where', 'how', 'which', 'who', 'whom', 'then', 'is', 'are', 'was',
+                    'were', 'be', 'been', 'being', 'have', 'has', 'had', 'does', 'did', 'do',
+                    'doing', 'to', 'from', 'in', 'out', 'on', 'off', 'over', 'under', 'again'
+                ])
+                
+                # Add custom stopwords if provided
+                if custom_stopwords:
+                    for word in custom_stopwords:
+                        stop_words.add(word.lower())
+    elif custom_stopwords:
+        # If we're not excluding default stopwords but have custom ones
+        stop_words = set(word.lower() for word in custom_stopwords)
+    
     # Get word frequency
     freq_dict = count_word_frequency(text, min_length=min_word_length, stop_words=stop_words)
     
