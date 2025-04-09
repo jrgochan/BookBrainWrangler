@@ -80,6 +80,62 @@ def image_to_base64(image: Image.Image, format: str = 'PNG') -> str:
         logger.error(f"Error converting image to base64: {str(e)}")
         return ""
 
+def extract_text_from_pdf(pdf_path: str, max_pages: Optional[int] = None) -> str:
+    """
+    Extract text from PDF file, optionally limiting to a certain number of pages.
+    This is optimized for metadata extraction where we don't need the full content.
+    
+    Args:
+        pdf_path: Path to the PDF file
+        max_pages: Maximum number of pages to extract (None for all pages)
+        
+    Returns:
+        Extracted text as a string
+    """
+    extracted_text = ""
+    
+    try:
+        # Get page count
+        page_count = get_page_count(pdf_path)
+        if page_count == 0:
+            logger.warning(f"PDF has 0 pages: {pdf_path}")
+            return extracted_text
+            
+        # Determine how many pages to extract
+        pages_to_extract = min(page_count, max_pages) if max_pages else page_count
+        logger.debug(f"Extracting {pages_to_extract} pages from PDF with {page_count} total pages")
+        
+        # Extract text from pages
+        with open(pdf_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            
+            # Process limited number of pages
+            for i in range(min(len(pdf_reader.pages), pages_to_extract)):
+                page = pdf_reader.pages[i]
+                # Try to extract text directly
+                page_text = page.extract_text()
+                
+                # If direct extraction failed, try OCR
+                if not page_text or len(page_text.strip()) < 50:
+                    try:
+                        # Convert page to image and perform OCR
+                        image = extract_page_as_image(pdf_path, i+1)
+                        if image:
+                            # Use default OCR settings for metadata
+                            ocr_text, _ = perform_ocr(image, "pytesseract", None)
+                            page_text = ocr_text
+                    except Exception as e:
+                        logger.error(f"OCR error on page {i+1} during metadata extraction: {str(e)}")
+                
+                # Add to result
+                extracted_text += page_text + "\n\n"
+        
+        return extracted_text
+            
+    except Exception as e:
+        logger.error(f"Error extracting text from PDF for metadata: {str(e)}")
+        return extracted_text
+
 def process_pdf(pdf_path: str, include_images: bool = True, 
                ocr_engine: str = "pytesseract", ocr_settings: Optional[Dict[str, Any]] = None,
                progress_callback: Optional[Callable] = None) -> Dict[str, Any]:

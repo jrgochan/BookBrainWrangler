@@ -104,7 +104,7 @@ def render_upload_section(book_manager, document_processor):
                 # Step 4: Extract metadata
                 meta_progress.progress(50, text="Analyzing document for metadata...")
                 
-                # Extract metadata
+                # Extract metadata with file path context
                 extracted_metadata = document_processor.extract_metadata(temp_path)
                 
                 # Step 5: Display found metadata

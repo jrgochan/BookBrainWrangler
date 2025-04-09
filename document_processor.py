@@ -442,79 +442,110 @@ class DocumentProcessor:
             {
                 'title': Extracted title or None if not found,
                 'author': Extracted author or None if not found,
-                'categories': List of extracted categories or empty list if none found
+                'categories': List of extracted categories or empty list if none found,
+                'published_date': Publication date if found, otherwise None
             }
         """
-        # Initialize result
-        metadata = {
-            'title': None,
-            'author': None,
-            'categories': []
-        }
-        
         # Get content if not provided
         if content is None:
             # Only extract the first few pages for metadata (faster)
             try:
-                extracted = self.extract_content(file_path, include_images=False)
-                if isinstance(extracted, dict):
-                    content = extracted.get('text', '')
+                # For specific file types, use optimized extraction
+                file_ext = os.path.splitext(file_path)[1].lower()
+                
+                # For PDFs, try to limit to first few pages for faster processing
+                if file_ext == '.pdf':
+                    try:
+                        from document_processing.pdf_processor import extract_text_from_pdf
+                        # Only extract first 3 pages for metadata (faster)
+                        content = extract_text_from_pdf(file_path, max_pages=3)
+                        logger.debug(f"Extracted first 3 pages for PDF metadata: {len(content)} characters")
+                    except Exception as e:
+                        logger.warning(f"Error extracting first few pages, falling back to full extraction: {e}")
+                        extracted = self.extract_content(file_path, include_images=False)
+                        content = extracted.get('text', '') if isinstance(extracted, dict) else extracted
                 else:
-                    content = extracted
+                    # Standard extraction for other formats
+                    extracted = self.extract_content(file_path, include_images=False)
+                    content = extracted.get('text', '') if isinstance(extracted, dict) else extracted
             except Exception as e:
                 logger.error(f"Error extracting content for metadata: {e}")
-                return metadata
+                # Return default metadata with filename as title
+                file_name = os.path.basename(file_path)
+                file_name_no_ext = os.path.splitext(file_name)[0]
+                return {
+                    'title': file_name_no_ext,
+                    'author': None,
+                    'categories': [],
+                    'published_date': None
+                }
         
-        # Process content to extract metadata
-        if content and isinstance(content, str):
-            # Extract file name as fallback title (without extension)
-            file_name = os.path.basename(file_path)
-            file_name_no_ext = os.path.splitext(file_name)[0]
-            metadata['title'] = file_name_no_ext  # Default to file name
+        # Use improved metadata extraction from specialized module
+        try:
+            # Import here to avoid circular imports
+            from document_processing.metadata import extract_metadata as extract_metadata_func
             
-            # Get first 1000 characters for metadata extraction (usually in the beginning)
-            # Also check the entire content but prioritize matches near the beginning
-            beginning = content[:1000]
+            # Use the specialized version with file_path for context-aware extraction
+            metadata = extract_metadata_func(content, file_path=file_path)
+            logger.debug(f"Extracted metadata using improved algorithm: {metadata}")
             
-            # Look for title
-            for pattern in self.metadata_patterns['title']:
-                # First check beginning of document
-                match = re.search(pattern, beginning, re.IGNORECASE)
-                if match:
-                    metadata['title'] = match.group(1).strip()
-                    break
-                    
-                # If not found in beginning, check full document
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    metadata['title'] = match.group(1).strip()
-                    break
+            # Fallback to filename if no title was found
+            if metadata.get('title') is None:
+                file_name = os.path.basename(file_path)
+                file_name_no_ext = os.path.splitext(file_name)[0]
+                metadata['title'] = file_name_no_ext
+                logger.debug(f"Using filename as fallback title: {file_name_no_ext}")
             
-            # Look for author
-            for pattern in self.metadata_patterns['author']:
-                # Check beginning first
-                match = re.search(pattern, beginning, re.IGNORECASE)
-                if match:
-                    metadata['author'] = match.group(1).strip()
-                    break
-                    
-                # If not found in beginning, check full document
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    metadata['author'] = match.group(1).strip()
-                    break
+            return metadata
             
-            # Look for categories
-            for pattern in self.metadata_patterns['categories']:
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    categories_str = match.group(1).strip()
-                    # Split categories by common delimiters
-                    categories = re.split(r'[,;|/]', categories_str)
-                    metadata['categories'] = [cat.strip() for cat in categories if cat.strip()]
-                    break
-        
-        return metadata
+        except Exception as e:
+            logger.error(f"Error in improved metadata extraction, falling back to basic: {e}")
+            
+            # Fall back to basic extraction using patterns in this class
+            basic_metadata = {
+                'title': None,
+                'author': None,
+                'categories': [],
+                'published_date': None
+            }
+            
+            if content and isinstance(content, str):
+                # Extract file name as fallback title (without extension)
+                file_name = os.path.basename(file_path)
+                file_name_no_ext = os.path.splitext(file_name)[0]
+                basic_metadata['title'] = file_name_no_ext  # Default to file name
+                
+                # Get first 1000 characters for metadata extraction
+                beginning = content[:1000]
+                
+                # Look for title in beginning of document (most likely location)
+                for pattern in self.metadata_patterns['title']:
+                    match = re.search(pattern, beginning, re.IGNORECASE)
+                    if match:
+                        basic_metadata['title'] = match.group(1).strip()
+                        break
+                
+                # Look for author with length constraints to avoid capturing too much
+                for pattern in self.metadata_patterns['author']:
+                    match = re.search(pattern, beginning, re.IGNORECASE)
+                    if match:
+                        author_text = match.group(1).strip()
+                        # Skip if author seems too long (likely false positive)
+                        if len(author_text) <= 50:
+                            basic_metadata['author'] = author_text
+                            break
+                
+                # Look for categories
+                for pattern in self.metadata_patterns['categories']:
+                    match = re.search(pattern, content, re.IGNORECASE)
+                    if match:
+                        categories_str = match.group(1).strip()
+                        # Split categories by common delimiters
+                        categories = re.split(r'[,;|/]', categories_str)
+                        basic_metadata['categories'] = [cat.strip() for cat in categories if cat.strip()]
+                        break
+            
+            return basic_metadata
     
     def _detect_tesseract_path(self, settings):
         """
