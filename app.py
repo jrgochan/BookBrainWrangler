@@ -21,7 +21,7 @@ logger = configure_logger()
 logger.info(f"Starting Book Knowledge AI application - Python {sys.version} on {platform.system()} {platform.release()}")
 
 # Import module classes
-from book_manager import BookManager
+from book_manager.manager import BookManager
 from document_processing import DocumentProcessor
 from knowledge_base import KnowledgeBase
 from ollama import OllamaClient

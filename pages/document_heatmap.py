@@ -22,7 +22,7 @@ from nltk.probability import FreqDist
 
 # Import project modules
 from knowledge_base import KnowledgeBase
-from book_manager import BookManager
+from book_manager.manager import BookManager
 from utils.logger import get_logger
 from utils.text_processing import cleanup_text
 
