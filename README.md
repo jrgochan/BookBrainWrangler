@@ -185,13 +185,38 @@ The application will be available at http://localhost:8501 and Ollama at http://
 
 ### Project Structure
 
+The application has undergone a major architectural restructuring to improve maintainability and organization:
+
 - `app.py` - Main Streamlit application
-- `book_manager.py` - Handles book database operations
-- `knowledge_base.py` - Manages the vector store and retrieval
-- `ollama_client.py` - Interacts with the Ollama API
-- `pdf_processor.py` - Extracts text from PDFs
-- `utils.py` - Utility functions
-- `database.py` - Database connection utilities
+- `ai/` - AI client implementations and utilities
+- `book_manager/` - Book database operations and management
+- `components/` - Reusable UI components
+- `config/` - Application configuration
+- `core/` - Core application functionality
+- `database/` - Database connection and models
+- `document_processing/` - Document handling and text extraction
+- `knowledge_base/` - Vector store and retrieval systems
+- `ollama/` - Ollama API client
+- `pages/` - Streamlit pages for the application
+- `utils/` - Utility functions and helpers
+
+### Codebase Maintenance
+
+#### Cleanup Script
+
+After pulling the latest changes, you may want to run the cleanup script to remove old, unused files that have been refactored into the new architecture:
+
+```bash
+python scripts/cleanup_old_files.py --dry-run
+```
+
+This will show you which files would be removed. To actually remove them:
+
+```bash
+python scripts/cleanup_old_files.py --backup
+```
+
+The `--backup` option creates a ZIP archive of all removed files in case you need to recover anything. For more information about the cleanup script, see `scripts/CLEANUP_README.md`.
 
 ### Local Development Setup
 

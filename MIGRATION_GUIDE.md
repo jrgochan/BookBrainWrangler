@@ -72,6 +72,26 @@ from ai.ollama import OllamaClient
 3. **Use Feature Branches**: Create a branch for each migration task
 4. **Update Documentation**: Keep documentation in sync with code changes
 
+## Cleaning Up Old Files
+
+After completing a migration phase, you'll want to clean up old files that are no longer needed. We've created a cleanup script to help with this process:
+
+```bash
+# Preview what will be removed
+python scripts/cleanup_old_files.py --dry-run
+
+# Create a backup and remove old files
+python scripts/cleanup_old_files.py --backup
+```
+
+The script provides several useful features:
+
+- **Dry Run Mode**: Preview files that would be deleted without actually removing them
+- **Backup Option**: Create a ZIP archive of files before removing them
+- **Thorough Mode**: Use import analysis to detect orphaned Python files
+
+For more information on the cleanup script, see [scripts/CLEANUP_README.md](scripts/CLEANUP_README.md).
+
 ## Schedule
 
 1. Phase 2: Interface Refinement - 1-2 weeks
