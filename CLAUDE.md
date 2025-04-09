@@ -1,8 +1,8 @@
-# BookBrainWrangler - AI-Powered Book Management System
+# Book Knowledge AI - AI-Powered Book Management System
 
 ## Project Overview
 
-BookBrainWrangler is a Streamlit-based application that transforms printed books and documents into an interactive, AI-enhanced knowledge base. The application allows users to upload books (PDFs or DOCX files), extract their content using OCR and text processing techniques, index the knowledge, and interact with it through an AI chatbot powered by Ollama.
+Book Knowledge AI is a Streamlit-based application that transforms printed books and documents into an interactive, AI-enhanced knowledge base. The application allows users to upload books (PDFs or DOCX files), extract their content using OCR and text processing techniques, index the knowledge, and interact with it through an AI chatbot powered by Ollama.
 
 This application is particularly useful for researchers, students, and knowledge workers who want to efficiently manage their digital library and extract insights from their collection of books and documents.
 
@@ -18,7 +18,7 @@ This application is particularly useful for researchers, students, and knowledge
 
 ## Technical Architecture
 
-BookBrainWrangler follows a modular architecture with clearly separated components:
+Book Knowledge AI follows a modular architecture with clearly separated components:
 
 ### Frontend
 
@@ -106,7 +106,7 @@ The AI chat interface allows natural language interaction with your document kno
 
 ## Setup and Installation
 
-BookBrainWrangler supports multiple installation methods for different environments:
+Book Knowledge AI supports multiple installation methods for different environments:
 
 ### Prerequisites
 
@@ -148,7 +148,7 @@ Special scripts are provided for WSL2 users to handle specific dependencies:
 
 ### Database Schema
 
-BookBrainWrangler uses SQLite with the following tables:
+Book Knowledge AI uses SQLite with the following tables:
 
 - **books**: Stores book metadata (title, author, file path)
 - **categories**: Stores category names
@@ -264,4 +264,4 @@ For testing new features:
 
 ## Conclusion
 
-BookBrainWrangler represents a powerful tool for knowledge workers who want to extract more value from their document collections. By combining OCR, databases, vector search, and AI, it creates a seamless system for not just storing documents, but truly interacting with their knowledge and content.
+Book Knowledge AI represents a powerful tool for knowledge workers who want to extract more value from their document collections. By combining OCR, databases, vector search, and AI, it creates a seamless system for not just storing documents, but truly interacting with their knowledge and content.

@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.vim
     pkgs.sqlite
     pkgs.tk
     pkgs.tcl

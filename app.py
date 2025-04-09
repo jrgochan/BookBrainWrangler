@@ -4,6 +4,7 @@ A Streamlit-powered book management and knowledge extraction application
 that transforms documents into an interactive, AI-enhanced knowledge base.
 """
 
+import streamlit as st
 import os
 import time
 import platform
@@ -15,46 +16,38 @@ from utils.logging_config import configure_logger
 from utils.streamlit_patch import apply_patches
 apply_patches()
 
-import streamlit as st
-
 # Configure logger
 logger = configure_logger()
 logger.info(f"Starting Book Knowledge AI application - Python {sys.version} on {platform.system()} {platform.release()}")
 
+# Import module classes
 from book_manager import BookManager
 from document_processor import DocumentProcessor
 from knowledge_base import KnowledgeBase
 from ollama_client import OllamaClient
 
-# Page imports
+# Import pages
 from pages.book_management import render_book_management_page
 from pages.knowledge_base import render_knowledge_base_page
+from pages.chat_with_ai import render_chat_with_ai_page
 from pages.knowledge_base_explorer import render_knowledge_base_explorer_page
 from pages.word_cloud_generator import render_word_cloud_generator_page
-from pages.chat_with_ai import render_chat_with_ai_page
 from pages.settings import render_settings_page
 
-# Configure the Streamlit page
-st.set_page_config(
-    page_title="Book Knowledge AI",
-    page_icon="📚",
-    layout="wide",
-    initial_sidebar_state="expanded",
+# Import UI helpers
+from utils.ui_helpers import set_page_config
+
+# Import configuration
+from config.settings import (
+    APP_TITLE, 
+    APP_ICON, 
+    APP_LAYOUT, 
+    INITIAL_SIDEBAR_STATE,
+    APP_MODES
 )
 
-# Hide the default Streamlit nav menu above the title
-hide_streamlit_nav = """
-<style>
-    header {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    /* Adjust spacing to compensate for hidden header */
-    .main .block-container {padding-top: 2rem;}
-</style>
-"""
-st.markdown(hide_streamlit_nav, unsafe_allow_html=True)
-
+# Initialize the components
+@st.cache_resource
 def initialize_components():
     """Initialize all major application components."""
     logger.info("Initializing application components")
@@ -70,8 +63,15 @@ def initialize_components():
         logger.debug("Initializing KnowledgeBase")
         knowledge_base = KnowledgeBase()
         
-        logger.debug("Initializing OllamaClient")
-        ollama_client = OllamaClient()
+        # Initialize Ollama client with settings from session state if available
+        if 'ollama_settings' in st.session_state and isinstance(st.session_state.ollama_settings, dict):
+            server_url = st.session_state.ollama_settings.get('server_url', 'http://localhost:11434')
+            model = st.session_state.ollama_settings.get('model', 'llama2')
+            logger.debug(f"Initializing OllamaClient with server_url={server_url}, model={model}")
+            ollama_client = OllamaClient(server_url=server_url, model=model)
+        else:
+            logger.debug("Initializing OllamaClient with default settings")
+            ollama_client = OllamaClient()
         
         logger.success("All components initialized successfully")
         return book_manager, document_processor, knowledge_base, ollama_client
@@ -88,7 +88,7 @@ def initialize_session_state():
     
     # App mode state
     if 'app_mode' not in st.session_state:
-        st.session_state.app_mode = "Book Management"
+        st.session_state.app_mode = APP_MODES[0]
         initialized_items.append("app_mode")
     
     # Thumbnail cache
@@ -109,8 +109,8 @@ def initialize_session_state():
     # Ollama settings
     if 'ollama_settings' not in st.session_state:
         st.session_state.ollama_settings = {
-            'model': 'llama2',
-            'server_url': 'http://localhost:11434',
+            'model': os.environ.get("OLLAMA_MODEL", "llama2"),
+            'server_url': os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
             'temperature': 0.7,
             'context_window': 4096,
         }
@@ -126,7 +126,7 @@ def render_sidebar(app_modes):
     logger.debug("Rendering sidebar navigation")
     
     with st.sidebar:
-        st.title("📚 Book Knowledge AI")
+        st.title(APP_TITLE)
         
         # Navigation
         st.subheader("Navigation")
@@ -152,6 +152,8 @@ def render_sidebar(app_modes):
         app_version = "1.0.0"  # This could be stored in a config file or constants module
         st.sidebar.caption(f"v{app_version} | Built with Streamlit")
         logger.debug(f"App version: {app_version}")
+    
+    return st.session_state.app_mode
 
 def main():
     """Main application entry point."""
@@ -159,64 +161,57 @@ def main():
     logger.info("Starting main application loop")
     
     try:
+        # Set the page configuration
+        set_page_config(APP_TITLE, APP_ICON, APP_LAYOUT, INITIAL_SIDEBAR_STATE)
+        
         # Initialize application state
         initialize_session_state()
         
         # Initialize components
         book_manager, document_processor, knowledge_base, ollama_client = initialize_components()
         
-        # Define application modes/pages
-        app_modes = [
-            "Book Management",
-            "Knowledge Base",
-            "Chat with AI",
-            "Knowledge Base Explorer",
-            "Word Cloud Generator",
-            "Settings",
-        ]
-        
-        # Render sidebar navigation
-        render_sidebar(app_modes)
+        # Render sidebar and get selected mode
+        selected_mode = render_sidebar(APP_MODES)
         
         # Log current mode
-        current_mode = st.session_state.app_mode
-        logger.info(f"Rendering page: {current_mode}")
+        logger.info(f"Rendering page: {selected_mode}")
         
         # Render the selected page
         try:
-            if current_mode == "Book Management":
+            if selected_mode == "Book Management":
                 render_book_management_page(book_manager, document_processor, knowledge_base)
             
-            elif current_mode == "Knowledge Base":
+            elif selected_mode == "Knowledge Base":
                 render_knowledge_base_page(book_manager, knowledge_base)
             
-            elif current_mode == "Chat with AI":
+            elif selected_mode == "Chat with AI":
                 render_chat_with_ai_page(ollama_client, knowledge_base)
             
-            elif current_mode == "Knowledge Base Explorer":
+            elif selected_mode == "Knowledge Base Explorer":
                 render_knowledge_base_explorer_page(knowledge_base)
             
-            elif current_mode == "Word Cloud Generator":
+            elif selected_mode == "Word Cloud Generator":
                 render_word_cloud_generator_page(book_manager)
                 
-            elif current_mode == "Settings":
+            elif selected_mode == "Settings":
                 render_settings_page(ollama_client)
                 
             else:
-                logger.error(f"Unknown app mode: {current_mode}")
-                st.error(f"Unknown application mode: {current_mode}")
+                logger.error(f"Unknown app mode: {selected_mode}")
+                st.error(f"Unknown application mode: {selected_mode}")
                 
             # Log page render time
             render_time = time.time() - start_time
-            logger.debug(f"Page {current_mode} rendered in {render_time:.2f} seconds")
+            logger.debug(f"Page {selected_mode} rendered in {render_time:.2f} seconds")
                 
         except Exception as e:
-            logger.exception(f"Error rendering page {current_mode}: {str(e)}")
+            logger.exception(f"Error rendering page {selected_mode}: {str(e)}")
             st.error(f"An error occurred while rendering the page: {str(e)}")
             
     except Exception as e:
         logger.exception(f"Critical application error: {str(e)}")
         st.error("A critical error occurred in the application. Please check the logs for details.")
 
+# Run the application
 if __name__ == "__main__":
     main()

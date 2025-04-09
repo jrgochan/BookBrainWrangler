@@ -3,7 +3,7 @@ Embedding model implementation for the Knowledge Base.
 Handles various embedding models and provides error handling.
 """
 
-from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
 from utils.logger import get_logger
 import numpy as np
 

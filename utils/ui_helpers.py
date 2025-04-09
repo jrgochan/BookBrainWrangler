@@ -7,6 +7,36 @@ import base64
 import streamlit as st
 from io import BytesIO
 
+def set_page_config(page_title, page_icon, layout, initial_sidebar_state):
+    """
+    Configure the Streamlit page settings.
+    
+    Args:
+        page_title: The title of the page
+        page_icon: Icon to display in the browser tab
+        layout: Page layout ('wide' or 'centered')
+        initial_sidebar_state: Initial state of the sidebar ('auto', 'expanded', 'collapsed')
+    """
+    st.set_page_config(
+        page_title=page_title,
+        page_icon=page_icon,
+        layout=layout,
+        initial_sidebar_state=initial_sidebar_state,
+    )
+    
+    # Hide the default Streamlit nav menu above the title
+    hide_streamlit_nav = """
+    <style>
+        header {visibility: hidden;}
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        
+        /* Adjust spacing to compensate for hidden header */
+        .main .block-container {padding-top: 2rem;}
+    </style>
+    """
+    st.markdown(hide_streamlit_nav, unsafe_allow_html=True)
+
 def show_progress_bar(container, current, total, label="Progress"):
     """
     Show a progress bar in the given container.
