@@ -447,17 +447,37 @@ def render_library_section(book_manager):
     
     # Render book list
     def on_edit(book_id):
+        # Simply set the book to edit in session state without triggering metadata extraction
         st.session_state.book_to_edit = book_id
         st.rerun()
     
     def on_delete(book_id):
+        # Get the book title before deleting
         book = book_manager.get_book(book_id)
-        book_manager.delete_book(book_id)
-        # Remove from thumbnail cache
-        if 'thumbnail_cache' in st.session_state and book_id in st.session_state.thumbnail_cache:
-            del st.session_state.thumbnail_cache[book_id]
-        st.success(f"Book '{book['title']}' deleted successfully!")
-        st.rerun()
+        title = book['title'] if book else f"Book {book_id}"
+        
+        # Confirmation dialog using session state
+        if 'confirm_delete' not in st.session_state:
+            st.session_state.confirm_delete = None
+            
+        if st.session_state.confirm_delete == book_id:
+            # User confirmed deletion
+            book_manager.delete_book(book_id)
+            
+            # Remove from thumbnail cache
+            if 'thumbnail_cache' in st.session_state and book_id in st.session_state.thumbnail_cache:
+                del st.session_state.thumbnail_cache[book_id]
+                
+            st.success(f"Book '{title}' deleted successfully!")
+            
+            # Reset confirmation state
+            st.session_state.confirm_delete = None
+            st.rerun()
+        else:
+            # Set book_id as pending confirmation
+            st.session_state.confirm_delete = book_id
+            st.warning(f"Are you sure you want to delete '{title}'? Click Delete again to confirm.")
+            st.rerun()
     
     render_book_list(books, on_edit=on_edit, on_delete=on_delete)
 
@@ -468,7 +488,7 @@ def render_edit_modal(book_manager):
     Args:
         book_manager: The BookManager instance
     """
-    if hasattr(st.session_state, 'book_to_edit') and st.session_state.book_to_edit:
+    if 'book_to_edit' in st.session_state and st.session_state.book_to_edit:
         book = book_manager.get_book(st.session_state.book_to_edit)
         if book:
             st.header(f"Edit Book: {book['title']}")
@@ -479,7 +499,7 @@ def render_edit_modal(book_manager):
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Save Changes"):
+                if st.button("Save Changes", type="primary"):
                     categories = [cat.strip() for cat in new_categories.split(",") if cat.strip()]
                     book_manager.update_book(
                         book_id=book['id'],
