@@ -7,6 +7,7 @@ extracting text, images, and metadata.
 
 import os
 import tempfile
+import time
 from typing import Dict, List, Any, Optional, Union, Callable, Tuple, BinaryIO, IO
 
 from utils.logger import get_logger
@@ -291,3 +292,35 @@ class DocumentProcessor:
         except Exception as e:
             logger.error(f"Error extracting page from {file_path}: {str(e)}")
             return {'image': None}
+            
+    def save_uploaded_file(self, uploaded_file) -> str:
+        """
+        Save an uploaded file to a temporary directory and return the path.
+        
+        Args:
+            uploaded_file: Streamlit UploadedFile object
+            
+        Returns:
+            Path to the saved file
+        """
+        try:
+            # Create a temporary directory if it doesn't exist
+            temp_dir = "temp"
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Generate a unique filename
+            file_ext = os.path.splitext(uploaded_file.name)[1].lower()
+            temp_filename = f"upload_{int(time.time())}{file_ext}"
+            temp_path = os.path.join(temp_dir, temp_filename)
+            
+            # Write file content
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+                
+            logger.info(f"Saved uploaded file: {temp_path}")
+            return temp_path
+            
+        except Exception as e:
+            error_msg = f"Error saving uploaded file: {str(e)}"
+            logger.error(error_msg)
+            raise DocumentProcessingError(error_msg) from e
