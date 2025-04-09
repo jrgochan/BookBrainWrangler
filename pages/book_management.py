@@ -685,13 +685,55 @@ def render_edit_modal(book_manager):
             with ai_tab:
                 st.subheader("AI Analysis & Insights")
                 
+                # Import Ollama client
+                from ollama_client import OllamaClient
+                
+                # Initialize Ollama client
+                ollama_client = OllamaClient()
+                
+                # Check if Ollama server is running
+                ollama_available = ollama_client.is_server_running()
+                
+                if not ollama_available:
+                    st.warning("⚠️ Ollama server is not available. Please make sure Ollama is installed and running, then check your connection settings.")
+                    
+                    # Show settings info
+                    with st.expander("Ollama Connection Help"):
+                        st.markdown("""
+                        ### Ollama Connection Troubleshooting
+                        
+                        1. **Install Ollama**: If you haven't installed Ollama yet, visit [ollama.ai](https://ollama.ai) for installation instructions.
+                        
+                        2. **Start Ollama**: Make sure the Ollama service is running on your computer.
+                        
+                        3. **Check Connection Settings**: By default, we try to connect to Ollama at `http://localhost:11434`. If your Ollama is running on a different address or port, you can configure this in the Settings page.
+                        
+                        4. **Install Models**: If Ollama is running but no models are available, you need to pull models using the Ollama CLI: `ollama pull llama2` or other models.
+                        """)
+                
+                # Get available models if Ollama is running
+                if ollama_available:
+                    available_models = ollama_client.get_available_models()
+                    # If no models are available, prompt the user to pull some
+                    if not available_models:
+                        st.warning("No AI models found in Ollama. Please pull models using `ollama pull llama2` or other models of your choice.")
+                        available_models = ["llama2", "mistral", "llama3"]  # Fallback suggestions
+                else:
+                    available_models = ["llama2", "mistral", "llama3"]  # Fallback suggestions when Ollama is not available
+                
                 # AI Model selection
+                model_options = [f"Ollama - {model}" for model in available_models]
+                
                 ai_model = st.selectbox(
                     "Select AI Model", 
-                    options=["Ollama - Llama2", "Ollama - Mistral", "OpenAI - GPT-3.5", "OpenAI - GPT-4"],
-                    index=0,
-                    key=f"ai_model_{book['id']}"
+                    options=model_options,
+                    index=0 if model_options else 0,
+                    key=f"ai_model_{book['id']}",
+                    disabled=not ollama_available
                 )
+                
+                # Get the selected model name without the "Ollama - " prefix
+                selected_model = ai_model.replace("Ollama - ", "") if ai_model and ai_model.startswith("Ollama - ") else "llama2"
                 
                 # Analysis options
                 st.write("#### Select Analysis Types")
@@ -713,20 +755,114 @@ def render_edit_modal(book_manager):
                                          key=f"depth_{book['id']}")
                 
                 # Run Analysis button
-                if st.button("Run AI Analysis", type="primary", key=f"run_analysis_{book['id']}"):
-                    # This would connect to the AI model and run the analysis
-                    # For now, show a placeholder for the functionality
-                    with st.spinner("Running AI analysis..."):
-                        st.info("AI Analysis would be performed here, connecting to the selected model.")
-                        st.info("This feature requires implementation of the AI integration.")
+                if st.button("Run AI Analysis", type="primary", key=f"run_analysis_{book['id']}", disabled=not ollama_available):
+                    # Get book content
+                    content = book_manager.get_book_content(book['id'])
+                    
+                    if not content:
+                        st.error("No content available for this book. Make sure the book has been processed properly.")
+                    else:
+                        # Prepare the analysis tasks based on selections
+                        tasks = []
+                        if extract_themes:
+                            tasks.append("Extract key themes and concepts")
+                        if summarize:
+                            tasks.append("Generate a concise summary")
+                        if extract_entities:
+                            tasks.append("Identify important named entities (people, places, organizations)")
+                        if sentiment:
+                            tasks.append("Analyze the overall sentiment and emotional tone")
+                        if key_quotes:
+                            tasks.append("Extract notable or quotable passages")
+                        if metadata_enhance:
+                            tasks.append("Suggest additional relevant tags or categories")
                         
-                        # Placeholder for future AI analysis results
-                        st.write("#### AI Analysis Results")
-                        st.warning("This is a placeholder. The actual AI analysis needs to be implemented.")
+                        # Adjust prompt based on analysis depth
+                        depth_instruction = ""
+                        if analysis_depth == 1:
+                            depth_instruction = "Keep your analysis very brief and concise."
+                        elif analysis_depth == 2:
+                            depth_instruction = "Keep your analysis moderately brief."
+                        elif analysis_depth == 3:
+                            depth_instruction = "Provide a balanced level of detail in your analysis."
+                        elif analysis_depth == 4:
+                            depth_instruction = "Provide a somewhat detailed analysis."
+                        elif analysis_depth == 5:
+                            depth_instruction = "Provide a very thorough and detailed analysis."
                         
-                        # Example of how the UI would look
-                        with st.expander("Analysis Summary"):
-                            st.write("The AI would provide a summary of the analysis here...")
+                        # Construct the prompt
+                        # Get a sample of the content based on analysis depth (to avoid token limits)
+                        content_sample_size = min(len(content), 1000 * analysis_depth)  # Scale with depth
+                        content_sample = content[:content_sample_size] + ("..." if len(content) > content_sample_size else "")
+                        
+                        prompt = f"""
+                        You are a literary analysis AI assistant. Analyze the following book text and provide insights based on the requested tasks.
+                        
+                        Book Title: {book['title']}
+                        Author: {book['author']}
+                        Categories: {', '.join(book['categories']) if book['categories'] else 'None'}
+                        
+                        Tasks to perform:
+                        {' '.join([f"- {task}" for task in tasks])}
+                        
+                        {depth_instruction}
+                        
+                        Text sample to analyze:
+                        ```
+                        {content_sample}
+                        ```
+                        
+                        Format your response with clear headings for each task. Focus only on the requested tasks.
+                        """
+                        
+                        # Run the analysis
+                        with st.spinner(f"Running AI analysis with {selected_model}..."):
+                            try:
+                                # Call Ollama to generate the analysis
+                                analysis_result = ollama_client.generate_response(
+                                    prompt=prompt,
+                                    model=selected_model,
+                                    temperature=0.3,  # Lower temperature for more deterministic output
+                                    max_tokens=2000 * analysis_depth  # Scale with depth
+                                )
+                                
+                                # Display the results
+                                st.write("#### AI Analysis Results")
+                                
+                                # Check if the response contains an error message
+                                if "error" in analysis_result.lower() or "sorry" in analysis_result.lower():
+                                    st.error(analysis_result)
+                                else:
+                                    # Split the response by sections and create expandable sections
+                                    sections = []
+                                    current_section = {"title": "Analysis Summary", "content": ""}
+                                    
+                                    for line in analysis_result.split('\n'):
+                                        if line.strip().startswith('#') or line.strip().startswith('**'):
+                                            # If we find a heading and already have content, save the current section
+                                            if current_section["content"]:
+                                                sections.append(current_section)
+                                                current_section = {"title": line.strip().replace('#', '').replace('*', '').strip(), "content": ""}
+                                            else:
+                                                current_section["title"] = line.strip().replace('#', '').replace('*', '').strip()
+                                        else:
+                                            current_section["content"] += line + "\n"
+                                    
+                                    # Add the last section
+                                    if current_section["content"]:
+                                        sections.append(current_section)
+                                    
+                                    # Display sections as expandable components
+                                    for section in sections:
+                                        with st.expander(section["title"], expanded=False):
+                                            st.markdown(section["content"])
+                                    
+                                    # Add option to save analysis to notes
+                                    if st.button("Save Analysis to Book Notes", key=f"save_analysis_{book['id']}"):
+                                        st.success("Analysis saved to book notes (functionality to be implemented)")
+                            except Exception as e:
+                                st.error(f"Error running AI analysis: {str(e)}")
+                                st.info("Please check your Ollama connection and try again.")
                 
                 # Guide for AI Analysis
                 with st.expander("About AI Analysis"):
@@ -741,7 +877,8 @@ def render_edit_modal(book_manager):
                     - Identify notable or quotable passages
                     - Enhance metadata with additional relevant tags
                     
-                    This feature requires proper configuration of the AI model connections.
+                    This feature requires a running Ollama server with at least one model pulled. 
+                    Visit [ollama.ai](https://ollama.ai) for installation instructions.
                     """)
                     
             # Add button to return to book list at the bottom of all tabs
