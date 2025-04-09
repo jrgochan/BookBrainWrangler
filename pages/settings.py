@@ -115,7 +115,10 @@ def render_ocr_settings():
     """Render OCR settings section."""
     st.header("OCR Settings")
     
-    # OCR engine options
+    # Import OCR engines from the document_processing package
+    from document_processing.ocr import OCR_ENGINES as _OCR_ENGINES
+    
+    # Create a copy with user-friendly labels
     OCR_ENGINES = {
         "pytesseract": "PyTesseract (Default)",
         "easyocr": "EasyOCR (Advanced)"

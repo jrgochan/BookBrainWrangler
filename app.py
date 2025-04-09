@@ -22,7 +22,7 @@ logger.info(f"Starting Book Knowledge AI application - Python {sys.version} on {
 
 # Import module classes
 from book_manager import BookManager
-from document_processor import DocumentProcessor
+from document_processing import DocumentProcessor
 from knowledge_base import KnowledgeBase
 from ollama_client import OllamaClient
 

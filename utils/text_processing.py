@@ -1,120 +1,219 @@
 """
-Text processing utilities for word frequency analysis and cleaning.
+Text processing utilities for document content.
 """
 
 import re
 import string
-import json
-import collections
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Any, Optional, Set, Tuple
 
-# NLP libraries for text processing
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
+from utils.logger import get_logger
 
-# Ensure NLTK data is downloaded
-def ensure_nltk_resources():
-    """Download the required NLTK resources if they're not already available."""
-    import os
-    
-    # Force download to user's home directory for more reliable access
-    nltk_data_path = os.path.expanduser('~/nltk_data')
-    os.makedirs(nltk_data_path, exist_ok=True)
-    
-    # Add the home directory to NLTK's data path search
-    nltk.data.path.insert(0, nltk_data_path)
-    
-    # Download required resources
-    for resource in ['punkt', 'stopwords']:
-        try:
-            nltk.data.find(f'tokenizers/{resource}')
-        except LookupError:
-            print(f"Downloading NLTK resource '{resource}' to {nltk_data_path}")
-            nltk.download(resource, download_dir=nltk_data_path, quiet=False)
-
-# Run our initialization function
-ensure_nltk_resources()
+# Get a logger for this module
+logger = get_logger(__name__)
 
 def cleanup_text(text: str) -> str:
     """
-    Clean up text by removing extra whitespace, normalizing line breaks, etc.
+    Clean up text by normalizing whitespace and removing control characters.
     
     Args:
-        text: Input text string
+        text: The text to clean up
         
     Returns:
-        Cleaned text string
+        Cleaned text
     """
     if not text:
         return ""
     
-    # Convert to string if not already
-    if not isinstance(text, str):
-        try:
-            text = str(text)
-        except:
-            return ""
+    # Replace multiple whitespace with a single space
+    clean_text = re.sub(r'\s+', ' ', text)
     
-    # Replace multiple spaces with a single space
-    text = re.sub(r'\s+', ' ', text)
+    # Replace common Unicode whitespace chars with standard space
+    clean_text = clean_text.replace('\xa0', ' ')
+    clean_text = clean_text.replace('\u2002', ' ')
+    clean_text = clean_text.replace('\u2003', ' ')
     
-    # Normalize line breaks
-    text = re.sub(r'[\r\n]+', '\n', text)
+    # Remove control characters (except newlines and tabs)
+    clean_text = ''.join(ch for ch in clean_text if ch == '\n' or ch == '\t' or ch >= ' ')
     
-    # Remove leading/trailing whitespace
-    text = text.strip()
+    # Fix common OCR errors
+    clean_text = clean_text.replace('|', 'I')  # Pipe character often mistaken for letter I
     
-    return text
+    return clean_text.strip()
 
-def analyze_word_frequency(
-    text: str, 
-    min_word_length: int = 3, 
-    max_words: int = 200,
-    exclude_stopwords: bool = True,
-    custom_stopwords: Optional[List[str]] = None
-) -> List[Tuple[str, int]]:
+def extract_keywords(text: str, min_length: int = 3, max_length: int = 25,
+                    stop_words: Optional[Set[str]] = None) -> List[str]:
     """
-    Analyze word frequency in a text.
+    Extract potential keywords from text.
     
     Args:
-        text: Text to analyze
-        min_word_length: Minimum word length to include
-        max_words: Maximum number of words to return
-        exclude_stopwords: Whether to exclude common stopwords
-        custom_stopwords: Optional list of additional stopwords to exclude
+        text: Text to extract keywords from
+        min_length: Minimum length of keywords
+        max_length: Maximum length of keywords
+        stop_words: Set of stop words to exclude
         
     Returns:
-        List of (word, frequency) tuples sorted by frequency
+        List of extracted keywords
     """
     if not text:
         return []
     
-    # Tokenize the text
-    tokens = word_tokenize(text.lower())
+    # Default set of english stop words
+    default_stop_words = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'if', 'because', 'as', 'what',
+        'when', 'where', 'how', 'which', 'who', 'whom', 'then', 'is', 'are', 'was',
+        'were', 'be', 'been', 'being', 'have', 'has', 'had', 'does', 'did', 'do',
+        'doing', 'to', 'from', 'in', 'out', 'on', 'off', 'over', 'under', 'again',
+        'further', 'then', 'once', 'here', 'there', 'all', 'any', 'both', 'each',
+        'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only',
+        'own', 'same', 'so', 'than', 'too', 'very', 'can', 'will', 'just', 'should',
+        'now', 'with', 'for', 'this', 'that'
+    }
     
-    # Remove punctuation
-    tokens = [word for word in tokens if word not in string.punctuation]
+    # Use provided stop words or default set
+    stop_words = stop_words or default_stop_words
     
-    # Remove short words
-    tokens = [word for word in tokens if len(word) >= min_word_length]
+    # Clean text
+    clean_text = cleanup_text(text)
     
-    # Remove stopwords if requested
-    if exclude_stopwords:
-        # Get English stopwords
-        stop_words = set(stopwords.words('english'))
+    # Split into words
+    words = re.findall(r'\b[A-Za-z][\w-]*[A-Za-z0-9]\b', clean_text)
+    
+    # Filter words
+    filtered_words = []
+    for word in words:
+        # Skip short words
+        if len(word) < min_length:
+            continue
+            
+        # Skip long words
+        if len(word) > max_length:
+            continue
+            
+        # Skip stop words
+        if word.lower() in stop_words:
+            continue
+            
+        filtered_words.append(word)
+    
+    return filtered_words
+
+def count_word_frequency(text: str, min_length: int = 3, 
+                         stop_words: Optional[Set[str]] = None) -> Dict[str, int]:
+    """
+    Count word frequency in text.
+    
+    Args:
+        text: Text to analyze
+        min_length: Minimum length of words to count
+        stop_words: Set of stop words to exclude
         
-        # Add custom stopwords if provided
-        if custom_stopwords:
-            stop_words.update(custom_stopwords)
+    Returns:
+        Dictionary mapping words to their frequency
+    """
+    if not text:
+        return {}
+    
+    # Extract words
+    words = extract_keywords(text, min_length=min_length, stop_words=stop_words)
+    
+    # Count frequency
+    frequency = {}
+    for word in words:
+        word_lower = word.lower()
+        if word_lower in frequency:
+            frequency[word_lower] += 1
+        else:
+            frequency[word_lower] = 1
+    
+    return frequency
+
+def calculate_text_density(text: str) -> float:
+    """
+    Calculate text density - the ratio of alphanumeric characters to total characters.
+    A higher number indicates more textual content vs. whitespace/punctuation.
+    
+    Args:
+        text: Text to analyze
         
-        # Filter out stopwords
-        tokens = [word for word in tokens if word not in stop_words]
+    Returns:
+        Text density as a float between 0 and 1
+    """
+    if not text:
+        return 0
     
-    # Count word frequencies
-    word_freq = collections.Counter(tokens)
+    # Count alphanumeric characters
+    alpha_count = sum(c.isalnum() for c in text)
     
-    # Get the most common words
-    most_common = word_freq.most_common(max_words)
+    # Total length
+    total_length = len(text)
     
-    return most_common
+    # Calculate density
+    if total_length > 0:
+        return alpha_count / total_length
+    else:
+        return 0
+
+def extract_sentences(text: str, min_length: int = 10, max_length: int = 500) -> List[str]:
+    """
+    Extract sentences from text.
+    
+    Args:
+        text: Text to extract sentences from
+        min_length: Minimum length of sentences to include
+        max_length: Maximum length of sentences to include
+        
+    Returns:
+        List of extracted sentences
+    """
+    if not text:
+        return []
+    
+    # Clean text
+    clean_text = cleanup_text(text)
+    
+    # Split into sentences using regex
+    # This handles common sentence endings (., !, ?) followed by space and capital letter
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', clean_text)
+    
+    # Filter sentences
+    filtered_sentences = []
+    for sentence in sentences:
+        # Skip short sentences
+        if len(sentence) < min_length:
+            continue
+            
+        # Truncate or skip long sentences
+        if len(sentence) > max_length:
+            # Either truncate
+            # sentence = sentence[:max_length] + "..."
+            # Or skip
+            continue
+            
+        filtered_sentences.append(sentence.strip())
+    
+    return filtered_sentences
+
+def analyze_word_frequency(text: str, min_word_length: int = 3, 
+                          max_words: int = 100,
+                          stop_words: Optional[Set[str]] = None) -> List[Tuple[str, int]]:
+    """
+    Analyze word frequency in text and return most common words.
+    
+    Args:
+        text: Text to analyze
+        min_word_length: Minimum length of words to count
+        max_words: Maximum number of words to return
+        stop_words: Set of stop words to exclude
+        
+    Returns:
+        List of (word, frequency) tuples, sorted by frequency (descending)
+    """
+    # Get word frequency
+    freq_dict = count_word_frequency(text, min_length=min_word_length, stop_words=stop_words)
+    
+    # Convert to list of tuples and sort by frequency (descending)
+    freq_list = [(word, freq) for word, freq in freq_dict.items()]
+    freq_list.sort(key=lambda x: x[1], reverse=True)
+    
+    # Limit to max_words
+    return freq_list[:max_words]
