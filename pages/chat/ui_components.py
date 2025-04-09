@@ -19,18 +19,50 @@ def render_chat_history(chat_history: List[Dict[str, str]], show_context: bool, 
     """
     from pages.chat.constants import AVATARS
     
-    # Main chat display area
-    chat_container = st.container(height=400, border=False)
+    # Add a small padding at the top if needed
+    st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
+    
+    # Use a larger height for better chat experience
+    # Set up a layout with two containers:
+    # 1. Main container for all messages
+    # 2. A scrollable inner container for the messages
+    chat_container = st.container(height=600, border=False)
+    
+    # Calculate available height for proper scroll positioning
+    available_height = 600  # Should match the container height
     
     with chat_container:
-        # Display chat history with avatars
+        # Create a flexible container to hold all messages
+        # This will automatically expand as messages are added
         for message in chat_history:
             with st.chat_message(message["role"], avatar=AVATARS.get(message["role"], "💬")):
                 if message["role"] == "system":
                     st.caption("System Instruction")
                 st.markdown(message["content"])
+        
+        # Add automatic scroll to bottom with custom HTML/JS
+        if chat_history:
+            # Add an invisible element at the bottom
+            st.markdown("""
+            <div id="chat-bottom-anchor"></div>
+            <script>
+                // Function to scroll to the bottom of the chat
+                function scrollToBottom() {
+                    const bottomAnchor = document.getElementById('chat-bottom-anchor');
+                    if (bottomAnchor) {
+                        bottomAnchor.scrollIntoView();
+                    }
+                }
+                
+                // Scroll to bottom when content loads
+                window.addEventListener('load', scrollToBottom);
+                
+                // Also try scrolling after a short delay to ensure all content is rendered
+                setTimeout(scrollToBottom, 500);
+            </script>
+            """, unsafe_allow_html=True)
     
-    # Display current context if enabled
+    # Display current context if enabled (below the chat)
     if show_context and current_context:
         with st.expander("📚 Current Context", expanded=False):
             st.markdown(current_context)
@@ -135,12 +167,29 @@ def render_action_buttons(on_clear: callable, on_export: callable) -> None:
         on_clear: Callback for clear conversation button
         on_export: Callback for export conversation button
     """
-    col1, col2 = st.columns(2)
+    # Create a cleaner, more compact button layout
+    col1, col2, col3 = st.columns([1, 1, 2])  # Giving more space to the right column
+    
     with col1:
-        if st.button("Clear conversation", use_container_width=True) and st.session_state.chat_history:
+        # Only enable the button if there's chat history
+        disabled = not bool(st.session_state.chat_history)
+        if st.button("🗑️ Clear", 
+                   use_container_width=True, 
+                   disabled=disabled,
+                   help="Clear the current conversation history"):
             on_clear()
             st.rerun()
     
     with col2:
-        if st.button("Save conversation", use_container_width=True) and st.session_state.chat_history:
+        # Only enable the button if there's chat history
+        disabled = not bool(st.session_state.chat_history)
+        if st.button("💾 Save", 
+                   use_container_width=True, 
+                   disabled=disabled,
+                   help="Save the conversation as a markdown file"):
             on_export()
+    
+    # Leave the third column empty for balance
+    with col3:
+        # Optional placeholder if we want to add another control in the future
+        pass
