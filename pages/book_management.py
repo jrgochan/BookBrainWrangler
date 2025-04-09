@@ -151,10 +151,12 @@ def render_upload_section(book_manager, document_processor):
     col1, col2 = st.columns(2)
     with col1:
         book_title = st.text_input("Book Title", 
-                                  value=extracted_metadata.get('title', '') if extracted_metadata else '')
+                                  value=extracted_metadata.get('title', '') if extracted_metadata else '',
+                                  key="new_book_title")
     with col2:
         book_author = st.text_input("Book Author", 
-                                   value=extracted_metadata.get('author', '') if extracted_metadata else '')
+                                   value=extracted_metadata.get('author', '') if extracted_metadata else '',
+                                   key="new_book_author")
     
     # Join categories with commas if they exist
     default_categories = ''
@@ -162,14 +164,15 @@ def render_upload_section(book_manager, document_processor):
         default_categories = ', '.join(extracted_metadata.get('categories', []))
     
     book_category = st.text_input("Category (comma-separated for multiple categories)",
-                                 value=default_categories)
+                                 value=default_categories,
+                                 key="new_book_categories")
     
     # Process button - Improved UI
     col1, col2 = st.columns([3, 1])
     with col1:
-        process_button = st.button("Process Book", type="primary", use_container_width=True)
+        process_button = st.button("Process Book", type="primary", use_container_width=True, key="process_book_button")
     with col2:
-        reset_button = st.button("Reset Form", use_container_width=True)
+        reset_button = st.button("Reset Form", use_container_width=True, key="reset_form_button")
         
     if reset_button:
         # Clear the form and extracted metadata
@@ -423,7 +426,7 @@ def render_upload_section(book_manager, document_processor):
                 del st.session_state.extracted_metadata
                 
             # Button to view library
-            if st.button("View Your Book Library"):
+            if st.button("View Your Book Library", key="view_library_button"):
                 st.rerun()  # This will refresh the page, showing the updated library
             
         except Exception as e:
@@ -451,7 +454,7 @@ def render_upload_section(book_manager, document_processor):
             """)
             
             # Button to try again
-            if st.button("Reset and Try Again"):
+            if st.button("Reset and Try Again", key="retry_upload_button"):
                 # Clear extracted metadata on error for next attempt
                 if 'extracted_metadata' in st.session_state:
                     del st.session_state.extracted_metadata
@@ -475,7 +478,7 @@ def render_library_section(book_manager):
     # Search and filter
     col1, col2 = st.columns(2)
     with col1:
-        search_query = st.text_input("Search books", st.session_state.search_query)
+        search_query = st.text_input("Search books", st.session_state.search_query, key="search_books_query")
         if search_query != st.session_state.search_query:
             st.session_state.search_query = search_query
     
@@ -485,7 +488,8 @@ def render_library_section(book_manager):
         filter_category = st.selectbox(
             "Filter by category", 
             filter_options, 
-            index=filter_options.index(st.session_state.filter_category) if st.session_state.filter_category in filter_options else 0
+            index=filter_options.index(st.session_state.filter_category) if st.session_state.filter_category in filter_options else 0,
+            key="filter_books_category"
         )
         if filter_category != st.session_state.filter_category:
             st.session_state.filter_category = filter_category
@@ -556,26 +560,27 @@ def render_edit_modal(book_manager):
             with basic_tab:
                 st.subheader("Edit Book Metadata")
                 
-                new_title = st.text_input("Book Title", book['title'])
-                new_author = st.text_input("Book Author", book['author'])
-                new_categories = st.text_input("Categories (comma-separated)", ", ".join(book['categories']))
+                new_title = st.text_input("Book Title", book['title'], key=f"edit_title_{book['id']}")
+                new_author = st.text_input("Book Author", book['author'], key=f"edit_author_{book['id']}")
+                new_categories = st.text_input("Categories (comma-separated)", ", ".join(book['categories']), key=f"edit_categories_{book['id']}")
                 
                 # Additional metadata fields
                 col1, col2 = st.columns(2)
                 with col1:
-                    publication_date = st.date_input("Publication Date", value=None)
+                    publication_date = st.date_input("Publication Date", value=None, key=f"edit_pub_date_{book['id']}")
                 with col2:
                     language = st.selectbox("Language", 
                                            options=["English", "Spanish", "French", "German", "Chinese", "Japanese", "Other"],
-                                           index=0)
+                                           index=0,
+                                           key=f"edit_language_{book['id']}")
                 
                 # Notes field
-                notes = st.text_area("Notes", placeholder="Add any notes about this book...")
+                notes = st.text_area("Notes", placeholder="Add any notes about this book...", key=f"edit_notes_{book['id']}")
                 
                 # Save and Cancel buttons
                 save_col, cancel_col = st.columns(2)
                 with save_col:
-                    if st.button("Save Changes", type="primary", use_container_width=True):
+                    if st.button("Save Changes", type="primary", use_container_width=True, key=f"save_changes_{book['id']}"):
                         categories = [cat.strip() for cat in new_categories.split(",") if cat.strip()]
                         book_manager.update_book(
                             book_id=book['id'],
@@ -590,7 +595,7 @@ def render_edit_modal(book_manager):
                         st.rerun()
                 
                 with cancel_col:
-                    if st.button("Cancel", use_container_width=True):
+                    if st.button("Cancel", use_container_width=True, key=f"cancel_edit_{book['id']}"):
                         # Clear the edit state and refresh
                         del st.session_state.book_to_edit
                         st.rerun()
@@ -618,7 +623,7 @@ def render_edit_modal(book_manager):
                     preview_text = content[:preview_length] + ("..." if len(content) > preview_length else "")
                     
                     st.markdown("### Content Preview")
-                    st.text_area("First 1000 characters", value=preview_text, height=300, disabled=True)
+                    st.text_area("First 1000 characters", value=preview_text, height=300, disabled=True, key=f"content_preview_{book['id']}")
                     
                     # Option to export content
                     st.download_button(
@@ -649,7 +654,7 @@ def render_edit_modal(book_manager):
                             st.metric("Number of Text Chunks", len(chunks))
                             
                             # Option to view chunks
-                            if st.checkbox("View Chunks"):
+                            if st.checkbox("View Chunks", key=f"view_chunks_{book['id']}"):
                                 for i, chunk in enumerate(chunks[:10]):  # Show first 10 chunks
                                     with st.expander(f"Chunk {i+1}"):
                                         st.write(chunk.page_content[:200] + "..." if len(chunk.page_content) > 200 else chunk.page_content)
@@ -658,7 +663,7 @@ def render_edit_modal(book_manager):
                                     st.info(f"Showing 10 out of {len(chunks)} chunks. All chunks will be used for AI responses.")
                         
                         # Remove from KB option
-                        if st.button("Remove from Knowledge Base"):
+                        if st.button("Remove from Knowledge Base", key=f"remove_kb_{book['id']}"):
                             kb.remove_document(book['id'])
                             st.warning("Book has been removed from the Knowledge Base.")
                             st.rerun()
@@ -666,7 +671,7 @@ def render_edit_modal(book_manager):
                         st.warning("This book is not currently indexed in the Knowledge Base.")
                         
                         # Add to KB option
-                        if st.button("Add to Knowledge Base", type="primary"):
+                        if st.button("Add to Knowledge Base", type="primary", key=f"add_kb_{book['id']}"):
                             try:
                                 kb.add_document(book['id'], book_manager)
                                 st.success("Book has been added to the Knowledge Base.")
@@ -684,7 +689,8 @@ def render_edit_modal(book_manager):
                 ai_model = st.selectbox(
                     "Select AI Model", 
                     options=["Ollama - Llama2", "Ollama - Mistral", "OpenAI - GPT-3.5", "OpenAI - GPT-4"],
-                    index=0
+                    index=0,
+                    key=f"ai_model_{book['id']}"
                 )
                 
                 # Analysis options
@@ -692,21 +698,22 @@ def render_edit_modal(book_manager):
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    extract_themes = st.checkbox("Extract Key Themes", value=True)
-                    summarize = st.checkbox("Generate Summary", value=True)
-                    extract_entities = st.checkbox("Identify Named Entities", value=False)
+                    extract_themes = st.checkbox("Extract Key Themes", value=True, key=f"themes_{book['id']}")
+                    summarize = st.checkbox("Generate Summary", value=True, key=f"summary_{book['id']}")
+                    extract_entities = st.checkbox("Identify Named Entities", value=False, key=f"entities_{book['id']}")
                 
                 with col2:
-                    sentiment = st.checkbox("Sentiment Analysis", value=False)
-                    key_quotes = st.checkbox("Extract Notable Quotes", value=False)
-                    metadata_enhance = st.checkbox("Enhance Metadata", value=True)
+                    sentiment = st.checkbox("Sentiment Analysis", value=False, key=f"sentiment_{book['id']}")
+                    key_quotes = st.checkbox("Extract Notable Quotes", value=False, key=f"quotes_{book['id']}")
+                    metadata_enhance = st.checkbox("Enhance Metadata", value=True, key=f"enhance_{book['id']}")
                 
                 # Analysis Depth
                 analysis_depth = st.slider("Analysis Depth", min_value=1, max_value=5, value=3, 
-                                         help="Higher values produce more detailed analysis but take longer")
+                                         help="Higher values produce more detailed analysis but take longer",
+                                         key=f"depth_{book['id']}")
                 
                 # Run Analysis button
-                if st.button("Run AI Analysis", type="primary"):
+                if st.button("Run AI Analysis", type="primary", key=f"run_analysis_{book['id']}"):
                     # This would connect to the AI model and run the analysis
                     # For now, show a placeholder for the functionality
                     with st.spinner("Running AI analysis..."):
@@ -739,6 +746,6 @@ def render_edit_modal(book_manager):
                     
             # Add button to return to book list at the bottom of all tabs
             st.divider()
-            if st.button("Return to Book List", use_container_width=True):
+            if st.button("Return to Book List", use_container_width=True, key=f"return_to_list_{book['id']}"):
                 del st.session_state.book_to_edit
                 st.rerun()
