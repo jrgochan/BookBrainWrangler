@@ -196,10 +196,13 @@ class BaseVectorStore(ABC):
         self._save_document_to_disk(document_id, text, document_metadata)
         
         # Chunk the document
+        document_data = {
+            "text": text,
+            "id": document_id,
+            "metadata": metadata
+        }
         chunks = chunk_document(
-            text,
-            document_id,
-            metadata,
+            document=document_data,
             chunk_size=chunk_size or 500,
             chunk_overlap=chunk_overlap or 50
         )
