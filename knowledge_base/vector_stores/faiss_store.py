@@ -59,6 +59,27 @@ class FAISSVectorStore(BaseVectorStore):
         self.gpu_enabled = use_gpu and GPU_AVAILABLE  # Public attribute
         self._using_gpu = False  # Will be set to True if GPU is actually used
 
+    # Add compatibility method to handle existing instances
+    def __getattribute__(self, name):
+        """
+        Override the attribute access to handle backward compatibility for gpu_enabled.
+        """
+        if name == "gpu_enabled":
+            try:
+                return super().__getattribute__(name)
+            except AttributeError:
+                # For backward compatibility with instances that were created before the attribute existed
+                _use_gpu = getattr(self, "_use_gpu", None)
+                if _use_gpu is not None and isinstance(_use_gpu, bool):
+                    # Set the attribute for future access
+                    object.__setattr__(self, "gpu_enabled", _use_gpu)
+                    return _use_gpu
+                else:
+                    # Default to False if no attribute is found
+                    object.__setattr__(self, "gpu_enabled", False)
+                    return False
+        return super().__getattribute__(name)
+
     # Backward compatibility property
     @property
     def _use_gpu(self) -> bool:
