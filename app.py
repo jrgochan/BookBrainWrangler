@@ -27,17 +27,19 @@ from document_processing import DocumentProcessor  # Using refactored DocumentPr
 from knowledge_base.vector_store import KnowledgeBase
 from ai.ollama import OllamaClient
 
-# Import pages
-from pages.book_management import render_book_management_page
-from pages.knowledge_base import render_knowledge_base_page
-from pages.chat_with_ai import render_chat_with_ai_page
-from pages.knowledge_base_explorer import render_knowledge_base_explorer_page
-from pages.word_cloud_generator import render_word_cloud_generator_page
-from pages.document_heatmap import render as render_document_heatmap_page
-from pages.settings import render_settings_page
+# Import pages from the new ui module
+from ui.pages import (
+    render_book_management_page,
+    render_knowledge_base_page,
+    render_chat_with_ai_page,
+    render_knowledge_base_explorer_page,
+    render_word_cloud_generator_page,
+    render_document_heatmap_page,
+    render_settings_page
+)
 
 # Import UI helpers
-from utils.ui_helpers import set_page_config
+from ui.helpers import render_empty_state, show_notification, render_loading_spinner, set_page_config
 
 # Import configuration
 from config.settings import (

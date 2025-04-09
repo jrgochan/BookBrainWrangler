@@ -3,61 +3,48 @@ Application configuration settings.
 Contains constants and settings for the application.
 """
 
-import os
-
 # Application information
 APP_TITLE = "Book Knowledge AI"
 APP_ICON = "📚"
-APP_LAYOUT = "wide"
-INITIAL_SIDEBAR_STATE = "expanded"
+APP_VERSION = "1.0.0"
 
-# Application modes/pages
+# Layout settings
+APP_LAYOUT = "wide"  # "wide" or "centered"
+INITIAL_SIDEBAR_STATE = "expanded"  # "expanded" or "collapsed"
+
+# Navigation modes
 APP_MODES = [
-    "Book Management", 
-    "Knowledge Base", 
-    "Chat with AI", 
-    "Knowledge Base Explorer", 
-    "Word Cloud Generator", 
+    "Book Management",
+    "Knowledge Base",
+    "Chat with AI",
+    "Knowledge Base Explorer",
+    "Word Cloud Generator",
     "Document Heatmap",
     "Settings"
 ]
 
-# File paths and directories
-TEMP_DIR = "temp"
-EXPORTS_DIR = "exports"
-KNOWLEDGE_BASE_DIR = "knowledge_base_data"
-
-# Create directories if they don't exist
-for directory in [TEMP_DIR, EXPORTS_DIR, KNOWLEDGE_BASE_DIR]:
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+# Default paths
+DEFAULT_DATA_PATH = "data"
+DEFAULT_EXPORT_PATH = "exports"
+DEFAULT_TEMP_PATH = "temp"
+DEFAULT_KB_PATH = "knowledge_base_data"
 
 # OCR settings
-DEFAULT_OCR_SETTINGS = {
-    'display_interval': 1,
-    'confidence_threshold': 70,
-    'show_current_image': True,
-    'show_extracted_text': True
-}
-
-# Thumbnail settings
-DEFAULT_THUMBNAIL_SIZE = (200, 280)
-DEFAULT_THUMBNAIL_BG_COLOR = (240, 240, 240)
-DEFAULT_THUMBNAIL_TEXT_COLOR = (70, 70, 70)
+DEFAULT_OCR_ENGINE = "pytesseract"
+DEFAULT_OCR_CONFIDENCE_THRESHOLD = 70.0  # percentage
+DEFAULT_OCR_DISPLAY_INTERVAL = 5  # show every 5th page
 
 # Ollama settings
-DEFAULT_OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama2")
+DEFAULT_OLLAMA_MODEL = "llama2"
+DEFAULT_OLLAMA_SERVER_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_TEMPERATURE = 0.7
+DEFAULT_OLLAMA_CONTEXT_WINDOW = 4096
 
-# Word Cloud settings
-DEFAULT_WORD_CLOUD_SETTINGS = {
-    'width': 800,
-    'height': 400,
-    'max_words': 200,
-    'background_color': 'white',
-    'colormap': 'viridis',
-    'min_font_size': 10
-}
+# Knowledge base settings
+DEFAULT_CHUNK_SIZE = 1000
+DEFAULT_CHUNK_OVERLAP = 200
+DEFAULT_EMBEDDING_MODEL = "default"
+DEFAULT_VECTOR_SIMILARITY_METRIC = "cosine"
 
-# Database settings
-DATABASE_FILE = "book_manager.db"
+# UI settings
+DEFAULT_THUMBNAIL_SIZE = 150

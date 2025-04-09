@@ -1,130 +1,204 @@
 """
-UI helper functions for Streamlit components
+UI helper functions for the application.
+Contains common UI utilities used across multiple pages.
 """
 
-import time
-import base64
 import streamlit as st
-from io import BytesIO
+import time
+from typing import Union, Callable, Optional, Dict, Any, Literal
 
-def set_page_config(page_title, page_icon, layout, initial_sidebar_state):
+from utils.logger import get_logger
+
+# Get a logger for this module
+logger = get_logger(__name__)
+
+def set_page_config(title: str, icon: str, layout: str, initial_sidebar_state: str):
     """
-    Configure the Streamlit page settings.
+    Set the page configuration for Streamlit.
     
     Args:
-        page_title: The title of the page
-        page_icon: Icon to display in the browser tab
-        layout: Page layout ('wide' or 'centered')
-        initial_sidebar_state: Initial state of the sidebar ('auto', 'expanded', 'collapsed')
+        title: The page title
+        icon: The page icon (emoji or URL)
+        layout: Page layout ("wide" or "centered")
+        initial_sidebar_state: Initial sidebar state ("expanded" or "collapsed")
     """
-    st.set_page_config(
-        page_title=page_title,
-        page_icon=page_icon,
-        layout=layout,
-        initial_sidebar_state=initial_sidebar_state,
-    )
+    try:
+        st.set_page_config(
+            page_title=title,
+            page_icon=icon,
+            layout=layout,
+            initial_sidebar_state=initial_sidebar_state,
+            menu_items={
+                'About': f"""
+                # {title}
+                An interactive document management and knowledge extraction application.
+                """
+            }
+        )
+        logger.debug(f"Page config set: title='{title}', layout='{layout}', sidebar='{initial_sidebar_state}'")
+    except Exception as e:
+        # This might happen if set_page_config is called twice
+        logger.debug(f"Could not set page config: {str(e)}")
+
+def show_progress_bar(message: str, progress_func: Callable, complete_message: str = "Complete!"):
+    """
+    Show a progress bar with a message and completion message.
     
-    # Hide the default Streamlit nav menu above the title
-    hide_streamlit_nav = """
-    <style>
-        header {visibility: hidden;}
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
+    Args:
+        message: Message to display during progress
+        progress_func: Function that performs the work and yields progress (0.0 to 1.0)
+        complete_message: Message to display when complete
+    """
+    # Create a progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Display initial message
+    status_text.text(message)
+    
+    try:
+        # Call the progress function and update the progress bar
+        for progress in progress_func():
+            # Ensure progress is between 0 and 1
+            progress = max(0, min(1, progress))
+            progress_bar.progress(progress)
+            
+            # Update status text with percentage
+            percentage = int(progress * 100)
+            status_text.text(f"{message} ({percentage}%)")
+            
+            # Small delay for visual effect
+            time.sleep(0.01)
         
-        /* Adjust spacing to compensate for hidden header */
-        .main .block-container {padding-top: 2rem;}
-    </style>
-    """
-    st.markdown(hide_streamlit_nav, unsafe_allow_html=True)
-
-def show_progress_bar(container, current, total, label="Progress"):
-    """
-    Show a progress bar in the given container.
-    
-    Args:
-        container: Streamlit container to render the progress bar in
-        current: Current progress value
-        total: Total value for 100% progress
-        label: Label to show with the progress bar
-    """
-    if total <= 0:
-        total = 1  # Avoid division by zero
-    
-    percent = min(current / total, 1.0)
-    container.progress(percent)
-    container.caption(f"{label}: {int(percent * 100)}% ({current}/{total})")
-
-def get_image_download_link(img, filename="image.png", button_text="Download Image"):
-    """
-    Generate a download link for an image.
-    
-    Args:
-        img: PIL Image object
-        filename: Name of the download file
-        button_text: Text for the download button
+        # Complete
+        progress_bar.progress(1.0)
+        status_text.text(complete_message)
         
-    Returns:
-        HTML string with download link
-    """
-    buffered = BytesIO()
-    img.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    href = f'<a href="data:file/png;base64,{img_str}" download="{filename}">{button_text}</a>'
-    return href
+    except Exception as e:
+        # Error
+        status_text.text(f"Error: {str(e)}")
+        logger.error(f"Progress bar error: {str(e)}")
+        raise
 
-def get_pdf_download_link(pdf_bytes, filename="document.pdf", button_text="Download PDF"):
+def create_download_link(data: bytes, filename: str, link_text: str = "Download") -> str:
     """
-    Generate a download link for a PDF.
+    Create a download link for file data.
     
     Args:
-        pdf_bytes: Bytes of the PDF file
-        filename: Name of the download file
-        button_text: Text for the download button
-        
-    Returns:
-        HTML string with download link
-    """
-    b64 = base64.b64encode(pdf_bytes).decode()
-    href = f'<a href="data:application/pdf;base64,{b64}" download="{filename}">{button_text}</a>'
-    return href
-
-def get_text_download_link(text, filename="text.txt", button_text="Download Text"):
-    """
-    Generate a download link for text content.
-    
-    Args:
-        text: Text content to download
-        filename: Name of the download file
-        button_text: Text for the download button
+        data: File data as bytes
+        filename: Name of the file to download
+        link_text: Text to display for the link
         
     Returns:
         HTML string with download link
     """
-    b64 = base64.b64encode(text.encode()).decode()
-    href = f'<a href="data:file/txt;base64,{b64}" download="{filename}">{button_text}</a>'
+    import base64
+    
+    b64 = base64.b64encode(data).decode()
+    href = f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">{link_text}</a>'
     return href
 
-def simulate_typing(placeholder, text, speed=0.01):
+def render_file_upload_area(label: str, file_types: Optional[list] = None, accept_multiple_files: bool = False):
     """
-    Simulate typing effect for text responses.
+    Render a file upload area with a consistent style.
     
     Args:
-        placeholder: Streamlit placeholder object
-        text: Text to display
-        speed: Delay between characters in seconds
-    """
-    displayed_text = ""
-    for char in text:
-        displayed_text += char
-        placeholder.markdown(displayed_text)
-        time.sleep(speed)
+        label: Label for the upload area
+        file_types: List of allowed file types (e.g., ["pdf", "docx"])
+        accept_multiple_files: Whether to accept multiple files
         
-def add_vertical_space(num_lines=1):
+    Returns:
+        Uploaded file(s) from st.file_uploader
     """
-    Add vertical space to the Streamlit UI.
+    # Create a bordered container with custom styling
+    upload_container = st.container()
+    
+    with upload_container:
+        st.markdown("""
+        <style>
+        .upload-container {
+            border: 2px dashed #aaa;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        </style>
+        
+        <div class="upload-container">
+            <p>Drag and drop files here, or click to select</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        return st.file_uploader(
+            label,
+            type=file_types,
+            accept_multiple_files=accept_multiple_files,
+            label_visibility="collapsed"
+        )
+
+def show_notification(message: str, type: str = "info", duration: int = 3):
+    """
+    Show a temporary notification message.
     
     Args:
-        num_lines: Number of line breaks to add
+        message: Message to display
+        type: Type of notification ("info", "success", "warning", "error")
+        duration: Duration in seconds to display the message
     """
-    for _ in range(num_lines):
-        st.markdown("<br>", unsafe_allow_html=True)
+    if type == "info":
+        placeholder = st.info(message)
+    elif type == "success":
+        placeholder = st.success(message)
+    elif type == "warning":
+        placeholder = st.warning(message)
+    elif type == "error":
+        placeholder = st.error(message)
+    else:
+        placeholder = st.info(message)
+    
+    # Auto-dismiss after duration
+    if duration > 0:
+        time.sleep(duration)
+        placeholder.empty()
+
+def render_error_box(title: str, error_message: str, help_text: Optional[str] = None):
+    """
+    Render a styled error box with title and message.
+    
+    Args:
+        title: Error title
+        error_message: Detailed error message
+        help_text: Optional help text with suggestions
+    """
+    st.error(f"**{title}**\n\n{error_message}")
+    
+    if help_text:
+        st.info(f"**Suggestion:**\n\n{help_text}")
+
+def render_empty_state(message: str, icon: str = "📚"):
+    """
+    Render an empty state message when no data is available.
+    
+    Args:
+        message: Message to display
+        icon: Icon to display before the message
+    """
+    st.markdown(f"""
+    <div style="text-align: center; padding: 50px 0; color: #888;">
+        <div style="font-size: 48px; margin-bottom: 20px;">{icon}</div>
+        <p>{message}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_loading_spinner(text: str = "Loading..."):
+    """
+    Create a loading spinner with text.
+    
+    Args:
+        text: Text to display with the spinner
+        
+    Returns:
+        Spinner context manager
+    """
+    return st.spinner(text)
