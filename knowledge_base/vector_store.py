@@ -8,7 +8,7 @@ import shutil
 import pickle
 import numpy as np
 from typing import List, Dict, Any, Optional, Union, Tuple
-from langchain_faiss import FAISS
+from langchain_community.vectorstores import FAISS
 from utils.logger import get_logger
 
 # Get logger
