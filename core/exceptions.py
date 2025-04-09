@@ -1,37 +1,52 @@
 """
-Custom exceptions for Book Knowledge AI application.
+Custom exceptions for the Book Knowledge AI application.
 """
 
-class BookKnowledgeAIError(Exception):
-    """Base exception for all application errors."""
+class BookKnowledgeError(Exception):
+    """Base exception for all application-specific errors."""
     pass
 
 
-class DocumentProcessingError(BookKnowledgeAIError):
-    """Exception raised when document processing fails."""
+class DatabaseError(BookKnowledgeError):
+    """Exception raised for database-related errors."""
+    pass
+
+
+class DocumentProcessingError(BookKnowledgeError):
+    """Exception raised for document processing errors."""
     pass
 
 
 class OCRError(DocumentProcessingError):
-    """Exception raised when OCR processing fails."""
+    """Exception raised for OCR-related errors."""
     pass
 
 
-class DatabaseError(BookKnowledgeAIError):
-    """Exception raised for database errors."""
+class AIClientError(BookKnowledgeError):
+    """Exception raised for AI client-related errors."""
     pass
 
 
-class KnowledgeBaseError(BookKnowledgeAIError):
-    """Exception raised for knowledge base operations."""
+class KnowledgeBaseError(BookKnowledgeError):
+    """Exception raised for knowledge base-related errors."""
     pass
 
 
-class AIClientError(BookKnowledgeAIError):
-    """Exception raised for AI client operations."""
+class ConfigurationError(BookKnowledgeError):
+    """Exception raised for configuration-related errors."""
     pass
 
 
-class ConfigurationError(BookKnowledgeAIError):
-    """Exception raised for configuration errors."""
+class UIError(BookKnowledgeError):
+    """Exception raised for UI-related errors."""
+    pass
+
+
+class ValidationError(BookKnowledgeError):
+    """Exception raised for validation errors."""
+    pass
+
+
+class PermissionError(BookKnowledgeError):
+    """Exception raised for permission-related errors."""
     pass

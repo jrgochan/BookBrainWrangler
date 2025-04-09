@@ -23,8 +23,9 @@ logger.info(f"Starting Book Knowledge AI application - Python {sys.version} on {
 # Import module classes
 from book_manager.manager import BookManager
 from document_processing import DocumentProcessor  # Using refactored DocumentProcessor
-from knowledge_base import KnowledgeBase
-from ollama import OllamaClient
+# Use the new paths with the refactored architecture
+from knowledge_base.vector_store import KnowledgeBase
+from ai.ollama import OllamaClient
 
 # Import pages
 from pages.book_management import render_book_management_page
@@ -58,18 +59,9 @@ def initialize_components():
         logger.debug("Initializing BookManager")
         book_manager = BookManager()
         
+        # Initialize DocumentProcessor
         logger.debug("Initializing DocumentProcessor")
-        # Get OCR settings from session state if available
-        if 'ocr_settings' in st.session_state and isinstance(st.session_state.ocr_settings, dict):
-            ocr_engine = st.session_state.ocr_settings.get('ocr_engine', 'pytesseract')
-            logger.debug(f"Initializing DocumentProcessor with OCR engine: {ocr_engine}")
-            document_processor = DocumentProcessor(
-                ocr_engine=ocr_engine,
-                ocr_settings=st.session_state.ocr_settings
-            )
-        else:
-            logger.debug("Initializing DocumentProcessor with default settings")
-            document_processor = DocumentProcessor()
+        document_processor = DocumentProcessor()
         
         logger.debug("Initializing KnowledgeBase")
         knowledge_base = KnowledgeBase()

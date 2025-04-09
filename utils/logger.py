@@ -1,113 +1,101 @@
 """
-Centralized logging configuration for BookBrainWrangler.
-
-This module configures the Loguru logger for the entire application and provides
-helper functions for consistent logging across modules.
+Logging utility for Book Knowledge AI.
 """
 
 import os
+import logging
 import sys
-from pathlib import Path
-from loguru import logger
+from datetime import datetime
+from typing import Optional
 
-class BookBrainLogger:
-    """
-    Centralized logger configuration for the BookBrainWrangler application.
-    Handles setup, configuration and provides convenient access to the logger.
-    """
-    
-    def __init__(self, log_level="INFO"):
-        """
-        Initialize the logging system.
-        
-        Args:
-            log_level: The minimum log level to display (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        """
-        self.log_level = log_level
-        self.log_dir = Path("logs")
-        self._setup_logging()
-    
-    def _setup_logging(self):
-        """Configure the logger with console and file handlers."""
-        # Create logs directory if it doesn't exist
-        os.makedirs(self.log_dir, exist_ok=True)
-        
-        # Remove default logger
-        logger.remove()
-        
-        # Add console handler with color formatting
-        logger.add(
-            sys.stderr, 
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            level=self.log_level,
-            colorize=True
-        )
-        
-        # Add rotating file handler
-        logger.add(
-            self.log_dir / "bookbrainwrangler.log",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            level="DEBUG",  # Always log everything to file
-            rotation="10 MB",  # Rotate when file reaches 10MB
-            compression="zip",  # Compress rotated logs
-            retention="1 month",  # Keep logs for a month
-            backtrace=True,  # Include traceback for errors
-            diagnose=True,  # Enable exception diagnostics
-            enqueue=True     # Thread-safe logging
-        )
-        
-        # Add a separate error log file for easy troubleshooting
-        logger.add(
-            self.log_dir / "errors.log",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            level="ERROR",  # Only log errors and above
-            rotation="5 MB",
-            compression="zip",
-            retention="3 months",
-            backtrace=True,
-            diagnose=True,
-            enqueue=True
-        )
-        
-        # Set exception handler to log uncaught exceptions
-        sys.excepthook = self._handle_exception
-        
-    def _handle_exception(self, exc_type, exc_value, exc_traceback):
-        """Log any uncaught exceptions."""
-        if issubclass(exc_type, KeyboardInterrupt):
-            # Don't log keyboard interrupt (Ctrl+C)
-            sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
-            
-        logger.opt(exception=(exc_type, exc_value, exc_traceback)).error("Uncaught exception")
-    
-    def get_logger(self, name=None):
-        """
-        Get a logger with an optional name.
-        The name helps identify which module a log entry is coming from.
-        
-        Args:
-            name: Optional name for the logger (typically __name__)
-            
-        Returns:
-            Configured logger instance
-        """
-        if name:
-            return logger.bind(name=name)
-        return logger
+# Configure logging
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+LOG_FILE = os.path.join(LOG_DIR, "app.log")
+ERROR_LOG_FILE = os.path.join(LOG_DIR, "errors.log")
 
-# Create a singleton instance
-log_manager = BookBrainLogger()
+# Create logs directory if it doesn't exist
+os.makedirs(LOG_DIR, exist_ok=True)
 
-# Helper function to get a logger
-def get_logger(name=None):
+# Set up root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+
+# Create formatters
+standard_formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+detailed_formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(pathname)s:%(lineno)d - %(message)s'
+)
+
+# File handler for all logs
+file_handler = logging.FileHandler(LOG_FILE)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(standard_formatter)
+root_logger.addHandler(file_handler)
+
+# File handler for error logs
+error_file_handler = logging.FileHandler(ERROR_LOG_FILE)
+error_file_handler.setLevel(logging.ERROR)
+error_file_handler.setFormatter(detailed_formatter)
+root_logger.addHandler(error_file_handler)
+
+# Console handler
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(standard_formatter)
+root_logger.addHandler(console_handler)
+
+def get_logger(name: str) -> logging.Logger:
     """
-    Get a configured logger with the given name.
+    Get a logger for a specific module.
     
     Args:
-        name: Optional name for the logger (typically __name__)
-            
+        name: Name of the module (usually __name__)
+        
     Returns:
-        Configured logger instance
+        Logger instance for the module
     """
-    return log_manager.get_logger(name)
+    return logging.getLogger(name)
+
+def set_log_level(level: int) -> None:
+    """
+    Set the log level for all handlers.
+    
+    Args:
+        level: Logging level (e.g., logging.DEBUG, logging.INFO)
+    """
+    root_logger.setLevel(level)
+    for handler in root_logger.handlers:
+        if handler != error_file_handler:  # Keep error handler at ERROR level
+            handler.setLevel(level)
+            
+def archive_logs(max_size_mb: int = 10) -> bool:
+    """
+    Archive logs if they exceed a certain size.
+    
+    Args:
+        max_size_mb: Maximum size in MB before archiving
+        
+    Returns:
+        True if logs were archived, False otherwise
+    """
+    import zipfile
+    import os.path
+    
+    if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > max_size_mb * 1024 * 1024:
+        # Create a timestamped archive filename
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
+        archive_name = os.path.join(LOG_DIR, f"app.{timestamp}.log.zip")
+        
+        # Create a zip file and add the log file
+        with zipfile.ZipFile(archive_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.write(LOG_FILE, os.path.basename(LOG_FILE))
+        
+        # Clear the log file
+        with open(LOG_FILE, 'w') as f:
+            f.write(f"Logs archived to {archive_name} at {datetime.now().isoformat()}\n")
+            
+        return True
+    
+    return False

@@ -2,14 +2,8 @@
 Base AI client for Book Knowledge AI application.
 """
 
-from typing import Dict, List, Any, Optional, Union
 from abc import ABC, abstractmethod
-
-from core.exceptions import AIClientError
-from utils.logger import get_logger
-
-# Get a logger for this module
-logger = get_logger(__name__)
+from typing import Dict, List, Any, Optional, Union
 
 class AIClient(ABC):
     """
@@ -26,8 +20,7 @@ class AIClient(ABC):
             **kwargs: Additional arguments for the client
         """
         self.model_name = model_name
-        self.logger = logger
-        
+    
     @abstractmethod
     def generate_response(self, prompt: str, **kwargs) -> str:
         """
@@ -59,7 +52,7 @@ class AIClient(ABC):
             Generated response text
         """
         pass
-        
+    
     @abstractmethod
     def list_models(self) -> List[str]:
         """

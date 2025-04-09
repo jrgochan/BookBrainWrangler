@@ -1,14 +1,8 @@
 """
-Document format-specific processing modules.
+Document format processors package.
 """
 
-from document_processing.formats.pdf import process_pdf, get_page_count, extract_page_as_image
-from document_processing.formats.docx import process_docx, extract_images_from_docx
-
-__all__ = [
-    'process_pdf',
-    'get_page_count',
-    'extract_page_as_image',
-    'process_docx',
-    'extract_images_from_docx',
-]
+# Import format-specific processors for easy access
+from document_processing.formats.pdf import process_pdf, get_page_count, extract_page_as_image, get_pdf_thumbnail
+# docx processor will be added later
+# from document_processing.formats.docx import process_docx

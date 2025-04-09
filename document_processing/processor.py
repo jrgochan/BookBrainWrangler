@@ -1,131 +1,123 @@
 """
-Main document processor module.
+Main document processor for Book Knowledge AI.
 """
 
 import os
-from typing import Dict, List, Any, Optional, Union, Tuple, Callable
+import io
+from typing import Dict, List, Any, Optional, Callable, Union
+from pathlib import Path
 
-from document_processing.ocr import OCR_ENGINES, initialize_ocr_engine
-from document_processing.pdf_processor import process_pdf
-from document_processing.docx_processor import process_docx  
-from document_processing.metadata import extract_metadata
 from utils.logger import get_logger
-from utils.file_helpers import is_valid_document
+from core.exceptions import DocumentProcessingError
+from document_processing.formats.pdf import process_pdf
+# docx processor will be added later
+# from document_processing.formats.docx import process_docx
 
 # Get a logger for this module
 logger = get_logger(__name__)
 
 class DocumentProcessor:
     """
-    Document processor for extracting text, images, and metadata from various document formats.
+    Document processor class for handling various document formats.
     """
     
-    def __init__(self, ocr_engine="pytesseract", ocr_settings=None):
+    def __init__(self, temp_dir: Optional[str] = None):
         """
-        Initialize the document processor with specified settings.
+        Initialize the document processor.
         
         Args:
-            ocr_engine: The OCR engine to use ('pytesseract' or 'easyocr')
-            ocr_settings: Dictionary of OCR-specific settings
+            temp_dir: Directory for temporary files
         """
-        # Set default OCR settings if none provided
-        self.ocr_settings = ocr_settings or {}
-        
-        # Set the OCR engine
-        self.ocr_engine = ocr_engine if ocr_engine in OCR_ENGINES else "pytesseract"
-        
-        # Initialize OCR engine
-        initialize_ocr_engine(self.ocr_engine, self.ocr_settings)
+        self.temp_dir = temp_dir or os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp")
+        os.makedirs(self.temp_dir, exist_ok=True)
+        logger.info(f"Initialized DocumentProcessor with temp_dir: {self.temp_dir}")
     
-    def extract_content(self, file_path: str, include_images: bool = True, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def process(self, file_path: str, file_type: Optional[str] = None, 
+                use_ocr: bool = False, include_images: bool = True,
+                progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """
-        Extract text and optionally images from a document file (PDF or DOCX).
+        Process a document file and extract content.
         
         Args:
             file_path: Path to the document file
+            file_type: Type of document (auto-detected if None)
+            use_ocr: Whether to use OCR for text extraction
             include_images: Whether to include images in the extraction
             progress_callback: Optional callback function for progress updates
             
         Returns:
-            A dictionary with extracted content:
-            {
-                'text': Extracted text as a string,
-                'images': List of image descriptions with embedded base64 data (if include_images=True)
-            }
+            Dictionary with extracted content
         """
-        if not is_valid_document(file_path):
-            raise ValueError(f"Unsupported file format: {os.path.splitext(file_path)[1]}")
-            
-        # Determine file type from extension
-        file_ext = os.path.splitext(file_path)[1].lower()
+        # Get file type from path if not provided
+        if file_type is None:
+            file_type = self._detect_file_type(file_path)
         
-        # Extract content based on file type
-        if file_ext == '.pdf':
-            return process_pdf(
-                file_path, 
-                include_images, 
-                self.ocr_engine, 
-                self.ocr_settings, 
-                progress_callback
-            )
-        elif file_ext == '.docx':
-            return process_docx(file_path, include_images, progress_callback)
+        logger.info(f"Processing document: {file_path} (type: {file_type})")
+        
+        # Process based on file type
+        if file_type.lower() == 'pdf':
+            return process_pdf(file_path, use_ocr, include_images, progress_callback)
+        elif file_type.lower() in ['docx', 'doc']:
+            # Temporary workaround until docx processor is implemented
+            logger.warning(f"DOCX processing not fully implemented yet. Using fallback method for {file_path}")
+            return {
+                'text': f"DOCX processing not fully implemented yet. File: {file_path}",
+                'images': []
+            }
         else:
-            raise ValueError(f"Unsupported file format: {file_ext}")
+            raise DocumentProcessingError(f"Unsupported file type: {file_type}")
     
-    def extract_text(self, file_path: str, progress_callback: Optional[Callable] = None) -> str:
+    def _detect_file_type(self, file_path: str) -> str:
         """
-        Legacy method to extract only text from a document file.
-        Maintained for backward compatibility.
+        Detect file type from path.
+        
+        Args:
+            file_path: Path to the file
+            
+        Returns:
+            File type as a string (pdf, docx, etc.)
+        """
+        file_extension = os.path.splitext(file_path)[1].lower().lstrip('.')
+        
+        # Map common extensions to standardized file types
+        extension_map = {
+            'pdf': 'pdf',
+            'docx': 'docx',
+            'doc': 'doc',
+            'txt': 'txt',
+            'md': 'md',
+            'epub': 'epub'
+        }
+        
+        return extension_map.get(file_extension, file_extension)
+    
+    def get_thumbnail(self, file_path: str, file_type: Optional[str] = None, 
+                     page: int = 1, width: int = 200) -> Optional[str]:
+        """
+        Generate a thumbnail for a document.
         
         Args:
             file_path: Path to the document file
-            progress_callback: Optional callback function for progress updates
+            file_type: Type of document (auto-detected if None)
+            page: Page number for the thumbnail
+            width: Width of the thumbnail in pixels
             
         Returns:
-            Extracted text as a string
+            Base64-encoded image data or None if generation fails
         """
-        result = self.extract_content(file_path, include_images=False, progress_callback=progress_callback)
-        if isinstance(result, dict):
-            return result.get('text', '')
-        return result
-    
-    def extract_metadata(self, file_path: str, content: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Extract book metadata (title, author, categories) from a document.
+        # Get file type from path if not provided
+        if file_type is None:
+            file_type = self._detect_file_type(file_path)
         
-        Args:
-            file_path: Path to the document file
-            content: Optional pre-extracted content to use instead of re-extracting
-            
-        Returns:
-            A dictionary with metadata fields:
-            {
-                'title': Extracted title or None if not found,
-                'author': Extracted author or None if not found,
-                'categories': List of extracted categories or empty list if none found
-            }
-        """
-        # If content is not provided, extract it
-        if content is None:
-            extracted = self.extract_content(file_path, include_images=False)
-            if isinstance(extracted, dict):
-                content = extracted.get('text', '')
+        # Generate thumbnail based on file type
+        try:
+            if file_type.lower() == 'pdf':
+                from document_processing.formats.pdf import get_pdf_thumbnail
+                return get_pdf_thumbnail(file_path, page, width)
+            # Add handlers for other file types as needed
             else:
-                content = extracted
-        
-        # Extract metadata from content using utility function
-        return extract_metadata(content)
-    
-    def get_page_count(self, pdf_path: str) -> int:
-        """
-        Get the number of pages in a PDF file.
-        
-        Args:
-            pdf_path: Path to the PDF file
-            
-        Returns:
-            Number of pages as an integer
-        """
-        from document_processing.pdf_processor import get_page_count
-        return get_page_count(pdf_path)
+                logger.warning(f"Thumbnail generation not supported for file type: {file_type}")
+                return None
+        except Exception as e:
+            logger.error(f"Error generating thumbnail: {str(e)}")
+            return None
