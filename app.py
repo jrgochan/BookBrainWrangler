@@ -124,8 +124,24 @@ def render_home_page():
 # Render book management page
 def render_book_management_page():
     """Render the book management page."""
+    # Import the console component
+    from components.console import render_console, create_processing_logger
+    import pandas as pd
+    
     st.title("Book Management")
     st.subheader("Upload, view, and manage your documents")
+    
+    # Initialize processing logs in session state if needed
+    if "processing_logs" not in st.session_state:
+        st.session_state.processing_logs = []
+    
+    # Function to add a log entry
+    def add_log(message, level="INFO"):
+        st.session_state.processing_logs.append({
+            'timestamp': datetime.now(),
+            'level': level,
+            'message': message
+        })
     
     # Upload new document
     st.header("Upload New Document")
@@ -136,44 +152,123 @@ def render_book_management_page():
     )
     
     if uploaded_file:
-        st.session_state.uploaded_files.append(uploaded_file)
+        # Add process button for better control
+        if st.button("Process Document", key="process_document_btn"):
+            # Clear previous logs
+            st.session_state.processing_logs = []
+            
+            # Add initial log
+            add_log(f"Starting processing of file: {uploaded_file.name}")
+            
+            # Create console logger and processing callback
+            progress_callback = create_processing_logger(st.session_state.processing_logs)
+            
+            # Display the console (will update in real-time)
+            console_placeholder = st.empty()
+            
+            # Process document
+            with st.spinner("Processing document..."):
+                try:
+                    # Save uploaded file
+                    add_log("Saving uploaded file...")
+                    file_path = st.session_state.document_processor.save_uploaded_file(uploaded_file)
+                    add_log(f"File saved to: {file_path}", "SUCCESS")
+                    
+                    # Update console
+                    with console_placeholder.container():
+                        render_console(st.session_state.processing_logs, title="Processing Log")
+                    
+                    # Process document with detailed logging
+                    add_log(f"Starting document processing: {file_path}")
+                    
+                    # Process document with progress callback
+                    result = st.session_state.document_processor.process_document(
+                        file_path,
+                        include_images=True,
+                        ocr_enabled=False,
+                        progress_callback=progress_callback
+                    )
+                    
+                    # Update console again
+                    with console_placeholder.container():
+                        render_console(st.session_state.processing_logs, title="Processing Log")
+                    
+                    # Add processing completion log
+                    add_log(f"Document processing complete: {len(result.get('text', ''))} characters of text extracted", "SUCCESS")
+                    
+                    if 'images' in result and result['images']:
+                        add_log(f"Extracted {len(result['images'])} images from document", "SUCCESS")
+                    
+                    # Add metadata extraction details
+                    if 'metadata' in result and result['metadata']:
+                        metadata = result['metadata']
+                        add_log(f"Extracted metadata: Title='{metadata.get('title', 'Unknown')}', Author='{metadata.get('author', 'Unknown')}'")
+                    
+                    # Add to processing results
+                    st.session_state.processing_results[file_path] = result
+                    add_log("Document added to processing results")
+                    
+                    # Add to knowledge base
+                    add_log("Generating document ID...")
+                    doc_id = st.session_state.knowledge_base.generate_id()
+                    add_log(f"Document ID generated: {doc_id}")
+                    
+                    add_log("Adding document to knowledge base...")
+                    st.session_state.knowledge_base.add_document(
+                        doc_id,
+                        result.get("text", ""),
+                        result.get("metadata", {})
+                    )
+                    add_log("Document successfully added to knowledge base", "SUCCESS")
+                    
+                    # Update console one last time
+                    with console_placeholder.container():
+                        render_console(st.session_state.processing_logs, title="Processing Log")
+                    
+                    # Final success message
+                    st.success(f"Document '{uploaded_file.name}' processed and added to knowledge base.")
+                    
+                    # Display document preview
+                    st.subheader("Document Preview")
+                    
+                    # Show metadata
+                    if "metadata" in result and result["metadata"]:
+                        st.json(result["metadata"])
+                    else:
+                        st.info("No metadata extracted from document")
+                    
+                    # Show text preview
+                    if "text" in result and result["text"]:
+                        with st.expander("Text Preview"):
+                            preview_text = result["text"][:1000] + "..." if len(result["text"]) > 1000 else result["text"]
+                            st.text(preview_text)
+                    
+                    # Show image preview if available
+                    if "images" in result and result["images"]:
+                        with st.expander(f"Images ({len(result['images'])})"):
+                            cols = st.columns(3)
+                            for i, img in enumerate(result["images"]):
+                                if "data" in img:
+                                    col_idx = i % 3
+                                    with cols[col_idx]:
+                                        st.image(f"data:image/{img.get('format', 'jpeg')};base64,{img['data']}", 
+                                                caption=f"Page {img.get('page', i+1)}",
+                                                width=200)
+                    
+                except Exception as e:
+                    error_msg = f"Error processing document: {str(e)}"
+                    add_log(error_msg, "ERROR")
+                    st.error(error_msg)
+                    logger.error(error_msg)
+                    
+                    # Update console to show the error
+                    with console_placeholder.container():
+                        render_console(st.session_state.processing_logs, title="Processing Log")
         
-        # Process document
-        with st.spinner("Processing document..."):
-            try:
-                # Save uploaded file
-                file_path = st.session_state.document_processor.save_uploaded_file(uploaded_file)
-                
-                # Process document
-                result = st.session_state.document_processor.process_document(
-                    file_path,
-                    include_images=True,
-                    ocr_enabled=False
-                )
-                
-                # Add to processing results
-                st.session_state.processing_results[file_path] = result
-                
-                # Add to knowledge base
-                doc_id = st.session_state.knowledge_base.generate_id()
-                st.session_state.knowledge_base.add_document(
-                    doc_id,
-                    result["text"],
-                    result["metadata"]
-                )
-                
-                st.success(f"Document '{uploaded_file.name}' processed and added to knowledge base.")
-                
-                # Display document preview
-                st.subheader("Document Preview")
-                st.json(result["metadata"])
-                
-                with st.expander("Text Preview"):
-                    st.text(result["text"][:1000] + "...")
-                
-            except Exception as e:
-                st.error(f"Error processing document: {str(e)}")
-                logger.error(f"Error processing document: {str(e)}")
+        # Show processing log even when not actively processing
+        if st.session_state.processing_logs:
+            st.subheader("Processing Log")
+            render_console(st.session_state.processing_logs)
     
     # List existing documents
     st.header("Existing Documents")

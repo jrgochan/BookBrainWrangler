@@ -78,7 +78,7 @@ class DOCXProcessor:
         
         try:
             # Define a progress callback handler
-            def send_progress(current, total, message):
+            def send_progress(current, total, message="Processing DOCX"):
                 if progress_callback:
                     progress_callback(current / total, message)
                     
