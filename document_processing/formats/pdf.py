@@ -1,242 +1,375 @@
 """
-PDF document processor for Book Knowledge AI.
-Handles extraction of text and images from PDF files.
+PDF processing module for document extraction.
+
+This module provides functionality for extracting text and images from PDF files.
 """
 
 import os
-import io
+import base64
 import tempfile
-from typing import Dict, List, Any, Optional, Callable
-
-try:
-    from PyPDF2 import PdfReader
-    from pdf2image import convert_from_path, convert_from_bytes
-except ImportError:
-    # Log the import error, but allow the module to be imported
-    import logging
-    logging.getLogger(__name__).error("PyPDF2 or pdf2image not installed. PDF processing will not be available.")
+from io import BytesIO
+from typing import Dict, List, Any, Optional, Union, Callable, Tuple
 
 from utils.logger import get_logger
-from utils.image_helpers import image_to_base64, resize_image
-from core.exceptions import DocumentProcessingError
+from core.exceptions import DocumentProcessingError, DocumentFormatError
 
-# Get a logger for this module
+# Initialize logger
 logger = get_logger(__name__)
 
-def process_pdf(file_path: str, include_images: bool = True, 
-                progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-    """
-    Process a PDF file and extract its content.
-    
-    Args:
-        file_path: Path to the PDF file
-        include_images: Whether to include images in the extraction
-        progress_callback: Optional callback for progress updates
-        
-    Returns:
-        Dictionary with extracted content:
-        {
-            'text': str,            # Full text content
-            'images': List[bytes],  # List of image data in bytes
-            'metadata': Dict        # Document metadata
-        }
-    """
-    logger.info(f"Processing PDF file: {file_path}")
-    
-    try:
-        # Extract text
-        text_content, num_pages = extract_text_from_pdf(file_path, progress_callback)
-        
-        # Extract images if requested
-        images = []
-        if include_images:
-            images = extract_images_from_pdf(file_path, progress_callback)
-        
-        # Extract metadata
-        metadata = extract_metadata_from_pdf(file_path, num_pages)
-        
-        # Return the extracted content
-        return {
-            'text': text_content,
-            'images': images,
-            'metadata': metadata
-        }
-    
-    except Exception as e:
-        logger.error(f"Error processing PDF file: {str(e)}")
-        raise DocumentProcessingError(f"Failed to process PDF file: {str(e)}")
+# Try to import required libraries
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    logger.warning("PyPDF2 not available. PDF text extraction will be limited.")
+    PYPDF2_AVAILABLE = False
 
-def extract_text_from_pdf(file_path: str, 
-                        progress_callback: Optional[Callable] = None) -> tuple[str, int]:
+try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    logger.warning("pdf2image not available. PDF image extraction will be limited.")
+    PDF2IMAGE_AVAILABLE = False
+
+class PDFProcessor:
     """
-    Extract text from a PDF file.
+    PDF processor for extracting text and images from PDF files.
+    """
     
-    Args:
-        file_path: Path to the PDF file
-        progress_callback: Optional callback for progress updates
+    def __init__(self):
+        """Initialize the PDF processor."""
+        # Check dependencies
+        if not PYPDF2_AVAILABLE:
+            logger.warning("PyPDF2 not available. PDF text extraction will be limited.")
         
-    Returns:
-        Tuple of (extracted text, number of pages)
-    """
-    try:
-        # Open the PDF file
-        with open(file_path, 'rb') as file:
-            reader = PdfReader(file)
-            num_pages = len(reader.pages)
+        if not PDF2IMAGE_AVAILABLE:
+            logger.warning("pdf2image not available. PDF image extraction will be limited.")
+    
+    def process(
+        self, 
+        file_path: str, 
+        extract_images: bool = True,
+        ocr_enabled: bool = False,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Process a PDF file and extract text and optionally images.
+        
+        Args:
+            file_path: Path to the PDF file
+            extract_images: Whether to extract images
+            ocr_enabled: Whether to use OCR for image-based PDFs
+            progress_callback: Optional callback function for progress updates
             
-            # Extract text from each page
-            full_text = []
-            for i, page in enumerate(reader.pages):
-                # Extract text from the page
-                text = page.extract_text()
-                if text:
-                    full_text.append(text)
+        Returns:
+            A dictionary with extracted content:
+            {
+                'text': Extracted text as a string,
+                'images': List of image descriptions with embedded base64 data (if extract_images=True),
+                'page_count': Number of pages in the PDF
+            }
+        """
+        if not os.path.exists(file_path):
+            error_msg = f"PDF file not found: {file_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        if not file_path.lower().endswith('.pdf'):
+            error_msg = f"Not a PDF file: {file_path}"
+            logger.error(error_msg)
+            raise DocumentFormatError(error_msg)
+        
+        # Initialize result dictionary
+        result = {
+            'text': '',
+            'images': [],
+            'page_count': 0
+        }
+        
+        try:
+            # Define a progress callback handler
+            def send_progress(current, total, message):
+                if progress_callback:
+                    progress_callback(current / total, message)
+                    
+            # Extract text from PDF
+            text_result = self.extract_text(file_path, progress_callback=send_progress)
+            result['text'] = text_result.get('text', '')
+            result['page_count'] = text_result.get('page_count', 0)
+            
+            # Extract images if requested
+            if extract_images:
+                # Try PDF2Image for rendering pages as images
+                if PDF2IMAGE_AVAILABLE:
+                    logger.info(f"Extracting images from PDF: {file_path}")
+                    images_result = self.extract_images(file_path, progress_callback=send_progress)
+                    result['images'] = images_result.get('images', [])
+                else:
+                    logger.warning("Skipping image extraction: pdf2image not available")
+            
+            # Log success
+            logger.info(f"Successfully processed PDF file: {file_path}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error processing PDF file {file_path}: {str(e)}"
+            logger.error(error_msg)
+            raise DocumentProcessingError(error_msg) from e
+    
+    def extract_text(
+        self, 
+        file_path: str,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract text from a PDF file.
+        
+        Args:
+            file_path: Path to the PDF file
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Dictionary with extracted text and page count
+        """
+        if not PYPDF2_AVAILABLE:
+            return {'text': '', 'page_count': 0}
+        
+        try:
+            # Open the PDF file
+            with open(file_path, 'rb') as file:
+                # Create a PDF reader object
+                pdf_reader = PyPDF2.PdfReader(file)
+                page_count = len(pdf_reader.pages)
                 
+                # Extract text from each page
+                text = ""
+                for i, page in enumerate(pdf_reader.pages):
+                    # Update progress
+                    if progress_callback:
+                        progress_callback(i / page_count, f"Extracting text from page {i+1}/{page_count}")
+                    
+                    # Extract text from page
+                    page_text = page.extract_text() or ""
+                    text += page_text + "\n\n"
+                
+                # Log success
+                logger.info(f"Extracted text from {page_count} pages in {file_path}")
+                return {
+                    'text': text.strip(),
+                    'page_count': page_count
+                }
+                
+        except Exception as e:
+            logger.error(f"Error extracting text from PDF {file_path}: {str(e)}")
+            return {'text': '', 'page_count': 0}
+    
+    def extract_images(
+        self,
+        file_path: str,
+        dpi: int = 200,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract images from a PDF file.
+        
+        Args:
+            file_path: Path to the PDF file
+            dpi: DPI for image extraction
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Dictionary with list of images as base64 encoded strings
+        """
+        if not PDF2IMAGE_AVAILABLE:
+            return {'images': []}
+        
+        try:
+            # Get page count
+            page_count = 0
+            if PYPDF2_AVAILABLE:
+                with open(file_path, 'rb') as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    page_count = len(pdf_reader.pages)
+            
+            # Convert PDF pages to images
+            images = []
+            pages = convert_from_path(
+                file_path,
+                dpi=dpi,
+                fmt='jpeg',
+                thread_count=4
+            )
+            
+            # If we couldn't get page count from PyPDF2, use the length of pages
+            if page_count == 0:
+                page_count = len(pages)
+            
+            # Process each page
+            for i, page_image in enumerate(pages):
                 # Update progress
                 if progress_callback:
-                    progress_callback(i, num_pages, {
-                        "text": f"Extracting text from page {i+1}/{num_pages}",
-                        "type": "text_extraction"
-                    })
-            
-            # Join all page texts with double newlines
-            return "\n\n".join(full_text), num_pages
-    
-    except Exception as e:
-        logger.error(f"Error extracting text from PDF: {str(e)}")
-        return "", 0
-
-def extract_images_from_pdf(file_path: str, 
-                          progress_callback: Optional[Callable] = None) -> List[bytes]:
-    """
-    Extract images from a PDF file using pdf2image.
-    This extracts page images rather than embedded images.
-    
-    Args:
-        file_path: Path to the PDF file
-        progress_callback: Optional callback for progress updates
-        
-    Returns:
-        List of image data in bytes
-    """
-    try:
-        # Convert PDF pages to images
-        images = convert_from_path(
-            file_path,
-            dpi=150,  # Lower DPI for reasonable file size
-            fmt='jpeg',
-            transparent=False,
-            first_page=1,
-            last_page=None  # All pages
-        )
-        
-        # Convert PIL images to bytes
-        image_bytes = []
-        for i, img in enumerate(images):
-            # Save image to byte array
-            byte_arr = io.BytesIO()
-            img.save(byte_arr, format='JPEG')
-            image_bytes.append(byte_arr.getvalue())
-            
-            # Update progress
-            if progress_callback:
-                progress_callback(i, len(images), {
-                    "text": f"Extracting image from page {i+1}/{len(images)}",
-                    "type": "image_extraction"
+                    progress_callback(i / page_count, f"Extracting image from page {i+1}/{page_count}")
+                
+                # Save image to a byte buffer
+                buffered = BytesIO()
+                page_image.save(buffered, format="JPEG")
+                
+                # Get base64 encoded string
+                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                
+                # Add to result
+                images.append({
+                    'page': i + 1,
+                    'type': 'page',
+                    'format': 'jpeg',
+                    'width': page_image.width,
+                    'height': page_image.height,
+                    'data': img_base64
                 })
-        
-        return image_bytes
-    
-    except Exception as e:
-        logger.error(f"Error extracting images from PDF: {str(e)}")
-        return []
-
-def extract_metadata_from_pdf(file_path: str, num_pages: int = 0) -> Dict[str, Any]:
-    """
-    Extract metadata from a PDF file.
-    
-    Args:
-        file_path: Path to the PDF file
-        num_pages: Number of pages in the PDF (if already known)
-        
-    Returns:
-        Dictionary with metadata
-    """
-    try:
-        # Open the PDF file
-        with open(file_path, 'rb') as file:
-            reader = PdfReader(file)
             
-            # Initialize metadata dictionary
-            metadata = {}
+            # Log success
+            logger.info(f"Extracted {len(images)} page images from {file_path}")
+            return {'images': images}
             
-            # Get document info
-            info = reader.metadata
-            if info:
-                # Extract available metadata
-                if info.title:
-                    metadata['title'] = info.title
-                if info.author:
-                    metadata['author'] = info.author
-                if info.subject:
-                    metadata['subject'] = info.subject
-                if info.creator:
-                    metadata['creator'] = info.creator
-                if hasattr(info, 'keywords') and info.keywords:
-                    # Split keywords by commas or semicolons
-                    keywords = info.keywords
-                    keyword_list = [k.strip() for k in keywords.replace(';', ',').split(',') if k.strip()]
-                    metadata['categories'] = keyword_list
-            
-            # Add page count
-            if num_pages > 0:
-                metadata['page_count'] = num_pages
-            else:
-                metadata['page_count'] = len(reader.pages)
-        
-        return metadata
+        except Exception as e:
+            logger.error(f"Error extracting images from PDF {file_path}: {str(e)}")
+            return {'images': []}
     
-    except Exception as e:
-        logger.error(f"Error extracting metadata from PDF: {str(e)}")
-        return {
-            'page_count': num_pages if num_pages > 0 else 0
-        }
-
-def get_pdf_thumbnail(file_path: str, width: int = 200) -> Optional[str]:
-    """
-    Generate a thumbnail for a PDF file.
-    
-    Args:
-        file_path: Path to the PDF file
-        width: Width of the thumbnail in pixels
+    def extract_page_as_image(
+        self,
+        file_path: str,
+        page_number: int = 0,
+        dpi: int = 200
+    ) -> Dict[str, Any]:
+        """
+        Extract a specific page as an image.
         
-    Returns:
-        Base64-encoded image data or None if generation fails
-    """
-    try:
-        # Convert first page to image
-        images = convert_from_path(
-            file_path,
-            dpi=72,  # Low DPI for thumbnail
-            fmt='jpeg',
-            transparent=False,
-            first_page=1,
-            last_page=1
-        )
-        
-        if images:
-            # Get the first page
-            first_page = images[0]
+        Args:
+            file_path: Path to the PDF file
+            page_number: Page number to extract (0-indexed)
+            dpi: DPI for image extraction
             
-            # Resize the image
-            resized = resize_image(first_page, width=width)
-            
-            # Convert to base64
-            if resized:
-                return image_to_base64(resized)
+        Returns:
+            Dictionary with image data
+        """
+        if not PDF2IMAGE_AVAILABLE:
+            return {'image': None}
         
-        return None
+        try:
+            # Convert specific page to image
+            pages = convert_from_path(
+                file_path,
+                dpi=dpi,
+                fmt='jpeg',
+                first_page=page_number + 1,
+                last_page=page_number + 1
+            )
+            
+            if not pages:
+                logger.warning(f"No page found at position {page_number} in {file_path}")
+                return {'image': None}
+            
+            # Get the extracted page
+            page_image = pages[0]
+            
+            # Save image to a byte buffer
+            buffered = BytesIO()
+            page_image.save(buffered, format="JPEG")
+            
+            # Get base64 encoded string
+            img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            # Log success
+            logger.info(f"Extracted page {page_number} as image from {file_path}")
+            return {
+                'image': {
+                    'page': page_number + 1,
+                    'type': 'page',
+                    'format': 'jpeg',
+                    'width': page_image.width,
+                    'height': page_image.height,
+                    'data': img_base64
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting page {page_number} as image from {file_path}: {str(e)}")
+            return {'image': None}
     
-    except Exception as e:
-        logger.error(f"Error creating PDF thumbnail: {str(e)}")
-        return None
+    def get_thumbnail(
+        self,
+        file_path: str,
+        page_number: int = 0,
+        width: int = 200,
+        height: int = 300
+    ) -> Optional[str]:
+        """
+        Get a thumbnail image for a PDF file.
+        
+        Args:
+            file_path: Path to the PDF file
+            page_number: Page number to use for thumbnail (0-indexed)
+            width: Desired width of the thumbnail
+            height: Desired height of the thumbnail
+            
+        Returns:
+            Base64 encoded thumbnail image or None if failed
+        """
+        try:
+            # Extract the page as an image
+            page_result = self.extract_page_as_image(file_path, page_number, dpi=100)
+            
+            if not page_result.get('image'):
+                return None
+                
+            # Import PIL for image processing
+            try:
+                from PIL import Image
+                from io import BytesIO
+                import base64
+                
+                # Decode the base64 image
+                image_data = page_result['image']['data']
+                image_bytes = base64.b64decode(image_data)
+                
+                # Open the image
+                image = Image.open(BytesIO(image_bytes))
+                
+                # Resize the image while maintaining aspect ratio
+                original_width, original_height = image.size
+                aspect_ratio = original_width / original_height
+                
+                if width / height > aspect_ratio:
+                    # Height is the limiting factor
+                    new_height = height
+                    new_width = int(aspect_ratio * new_height)
+                else:
+                    # Width is the limiting factor
+                    new_width = width
+                    new_height = int(new_width / aspect_ratio)
+                
+                # Resize the image
+                resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+                
+                # Create a new image with the desired dimensions and paste the resized image
+                thumbnail = Image.new('RGB', (width, height), (255, 255, 255))
+                paste_x = (width - new_width) // 2
+                paste_y = (height - new_height) // 2
+                thumbnail.paste(resized_image, (paste_x, paste_y))
+                
+                # Save the thumbnail to a byte buffer
+                buffered = BytesIO()
+                thumbnail.save(buffered, format="JPEG", quality=85)
+                
+                # Get base64 encoded string
+                thumbnail_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                
+                return thumbnail_base64
+                
+            except ImportError:
+                logger.warning("PIL not available for thumbnail generation")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error creating thumbnail for {file_path}: {str(e)}")
+            return None

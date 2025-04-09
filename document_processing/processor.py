@@ -1,271 +1,293 @@
 """
-Document processor for Book Knowledge AI.
-Handles extraction and processing of document content.
+Document processor module for Book Knowledge AI.
+
+This module provides a unified interface for processing different document formats,
+extracting text, images, and metadata.
 """
 
 import os
-import io
 import tempfile
-from typing import Dict, List, Any, Optional, Union, BinaryIO, Tuple
-from datetime import datetime
+from typing import Dict, List, Any, Optional, Union, Callable, Tuple, BinaryIO, IO
 
 from utils.logger import get_logger
-from core.exceptions import DocumentProcessingError
+from core.exceptions import DocumentProcessingError, DocumentFormatError
 
-# Get a logger for this module
+# Import format processors
+from document_processing.formats import PDFProcessor, DOCXProcessor
+
+# Initialize logger
 logger = get_logger(__name__)
 
 class DocumentProcessor:
     """
-    Document processor for handling different document formats.
-    Provides a unified interface for extracting text, metadata, and images.
+    Document processor for handling various document formats.
+    Provides a unified interface for extracting text and images from documents.
     """
     
-    def __init__(self, temp_dir: str = None):
-        """
-        Initialize the document processor.
+    def __init__(self):
+        """Initialize the document processor."""
+        # Initialize format processors
+        self.pdf_processor = PDFProcessor()
+        self.docx_processor = DOCXProcessor()
         
-        Args:
-            temp_dir: Directory for temporary files
-        """
-        self.temp_dir = temp_dir or "temp"
-        
-        # Create temp directory if it doesn't exist
-        os.makedirs(self.temp_dir, exist_ok=True)
-        
-        # Initialize format handlers
-        self._initialize_format_handlers()
-    
-    def _initialize_format_handlers(self):
-        """Initialize format-specific handlers."""
-        self.format_handlers = {}
-        
-        # Lazy-load format handlers to avoid circular imports
-        def get_pdf_handler():
-            from document_processing.formats.pdf import PDFProcessor
-            return PDFProcessor()
-        
-        def get_docx_handler():
-            from document_processing.formats.docx import DOCXProcessor
-            return DOCXProcessor()
-        
-        def get_txt_handler():
-            from document_processing.formats.text import TextProcessor
-            return TextProcessor()
-        
-        # Register handlers
-        self.format_handlers = {
-            "pdf": get_pdf_handler,
-            "docx": get_docx_handler,
-            "txt": get_txt_handler
+        # Initialize supported formats
+        self.supported_formats = {
+            'pdf': self.pdf_processor,
+            'docx': self.docx_processor,
+            'doc': self.docx_processor
         }
+        
+        logger.info("Document processor initialized")
     
-    def save_uploaded_file(self, uploaded_file) -> str:
-        """
-        Save an uploaded file to a temporary location.
-        
-        Args:
-            uploaded_file: Uploaded file object
-            
-        Returns:
-            Path to the saved file
-        """
-        # Create a unique filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{uploaded_file.name}"
-        filepath = os.path.join(self.temp_dir, filename)
-        
-        # Write the file
-        with open(filepath, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        logger.info(f"Saved uploaded file to {filepath}")
-        
-        return filepath
-    
-    def get_format_handler(self, file_path: str):
-        """
-        Get the appropriate format handler for a file.
-        
-        Args:
-            file_path: Path to the file
-            
-        Returns:
-            Format handler
-        """
-        # Get file extension
-        _, ext = os.path.splitext(file_path)
-        ext = ext.lower().lstrip(".")
-        
-        # Check if we have a handler for this format
-        if ext not in self.format_handlers:
-            raise DocumentProcessingError(f"Unsupported file format: {ext}")
-        
-        # Get handler
-        handler = self.format_handlers[ext]()
-        
-        return handler
-    
-    def process_document(
+    def process_file(
         self,
         file_path: str,
-        include_images: bool = True,
+        extract_images: bool = True,
         ocr_enabled: bool = False,
-        extract_tables: bool = False
+        progress_callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """
-        Process a document and extract content.
+        Process a document file and extract its content.
         
         Args:
-            file_path: Path to the document
-            include_images: Whether to extract images
-            ocr_enabled: Whether to use OCR
-            extract_tables: Whether to extract tables
+            file_path: Path to the document file
+            extract_images: Whether to extract images
+            ocr_enabled: Whether to use OCR for image-based documents
+            progress_callback: Optional callback function for progress updates
             
         Returns:
-            Dictionary with document content
+            A dictionary with extracted content
         """
+        if not os.path.exists(file_path):
+            error_msg = f"File not found: {file_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        # Get file extension
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower().lstrip('.')
+        
+        # Check if format is supported
+        if ext not in self.supported_formats:
+            error_msg = f"Unsupported document format: {ext}"
+            logger.error(error_msg)
+            raise DocumentFormatError(error_msg)
+        
         try:
-            # Get format handler
-            handler = self.get_format_handler(file_path)
+            # Get appropriate processor
+            processor = self.supported_formats[ext]
             
-            # Extract text
-            text = handler.extract_text(file_path)
+            # Process the file
+            logger.info(f"Processing {ext.upper()} file: {file_path}")
             
-            # Extract metadata
-            from document_processing.metadata import extract_metadata
-            metadata = extract_metadata(file_path)
+            if ext == 'pdf':
+                result = processor.process(
+                    file_path,
+                    extract_images=extract_images,
+                    ocr_enabled=ocr_enabled,
+                    progress_callback=progress_callback
+                )
+            else:
+                result = processor.process(
+                    file_path,
+                    extract_images=extract_images,
+                    progress_callback=progress_callback
+                )
             
-            # Initialize result
-            result = {
-                "text": text,
-                "metadata": metadata,
-                "filename": os.path.basename(file_path),
-                "file_path": file_path,
-                "file_size": os.path.getsize(file_path),
-                "format": metadata.get("format", "unknown"),
-                "processed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+            # Add metadata
+            result['format'] = ext
+            result['filename'] = os.path.basename(file_path)
+            result['file_path'] = file_path
             
-            # Extract images if requested
-            if include_images:
-                images = handler.extract_images(file_path)
-                result["images"] = images
-            
-            # Extract tables if requested
-            if extract_tables and hasattr(handler, "extract_tables"):
-                tables = handler.extract_tables(file_path)
-                result["tables"] = tables
-            
-            # Perform OCR if requested
-            if ocr_enabled and hasattr(handler, "perform_ocr"):
-                ocr_text = handler.perform_ocr(file_path)
-                result["ocr_text"] = ocr_text
-            
+            # Log success
             logger.info(f"Successfully processed document: {file_path}")
+            return result
+            
+        except DocumentProcessingError as e:
+            # Re-raise document processing errors
+            raise
+            
+        except Exception as e:
+            # Handle other errors
+            error_msg = f"Error processing document {file_path}: {str(e)}"
+            logger.error(error_msg)
+            raise DocumentProcessingError(error_msg) from e
+    
+    def process_file_object(
+        self,
+        file: BinaryIO,
+        filename: str,
+        extract_images: bool = True,
+        ocr_enabled: bool = False,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Process a file object (like an uploaded file) and extract its content.
+        
+        Args:
+            file: File object (bytes stream)
+            filename: Original filename
+            extract_images: Whether to extract images
+            ocr_enabled: Whether to use OCR for image-based documents
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            A dictionary with extracted content
+        """
+        # Get file extension
+        _, ext = os.path.splitext(filename)
+        ext = ext.lower().lstrip('.')
+        
+        # Check if format is supported
+        if ext not in self.supported_formats:
+            error_msg = f"Unsupported document format: {ext}"
+            logger.error(error_msg)
+            raise DocumentFormatError(error_msg)
+        
+        # Create a temporary file
+        try:
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as temp:
+                # Write uploaded file to temp file
+                file.seek(0)
+                temp.write(file.read())
+                temp_path = temp.name
+            
+            # Process the temporary file
+            result = self.process_file(
+                temp_path,
+                extract_images=extract_images,
+                ocr_enabled=ocr_enabled,
+                progress_callback=progress_callback
+            )
+            
+            # Update metadata
+            result['filename'] = filename
+            
+            # Delete temporary file
+            try:
+                os.unlink(temp_path)
+            except Exception as e:
+                logger.warning(f"Could not delete temporary file {temp_path}: {str(e)}")
             
             return result
-        
+            
         except Exception as e:
-            logger.error(f"Error processing document: {str(e)}")
-            raise DocumentProcessingError(f"Error processing document: {str(e)}")
-    
-    def get_text_preview(self, file_path: str, max_length: int = 1000) -> str:
-        """
-        Get a preview of the document text.
-        
-        Args:
-            file_path: Path to the document
-            max_length: Maximum preview length in characters
-            
-        Returns:
-            Text preview
-        """
-        try:
-            # Get format handler
-            handler = self.get_format_handler(file_path)
-            
-            # Extract text
-            text = handler.extract_text(file_path)
-            
-            # Truncate text
-            preview = text[:max_length]
-            if len(text) > max_length:
-                preview += "..."
-            
-            return preview
-        
-        except Exception as e:
-            logger.error(f"Error getting text preview: {str(e)}")
-            return f"Error: {str(e)}"
-    
-    def get_document_thumbnail(self, file_path: str, size: Tuple[int, int] = (200, 200)) -> bytes:
-        """
-        Get a thumbnail for the document.
-        
-        Args:
-            file_path: Path to the document
-            size: Thumbnail size (width, height)
-            
-        Returns:
-            Thumbnail image bytes
-        """
-        try:
-            # Get format handler
-            handler = self.get_format_handler(file_path)
-            
-            # Check if handler supports thumbnails
-            if hasattr(handler, "get_thumbnail"):
-                return handler.get_thumbnail(file_path, size)
-            else:
-                # Generate generic thumbnail
-                return self._generate_generic_thumbnail(file_path, size)
-        
-        except Exception as e:
-            logger.error(f"Error getting document thumbnail: {str(e)}")
-            return None
-    
-    def _generate_generic_thumbnail(self, file_path: str, size: Tuple[int, int]) -> bytes:
-        """
-        Generate a generic thumbnail for a document.
-        
-        Args:
-            file_path: Path to the document
-            size: Thumbnail size (width, height)
-            
-        Returns:
-            Thumbnail image bytes
-        """
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            import io
-            
-            # Create a blank image
-            img = Image.new("RGB", size, color=(240, 240, 240))
-            draw = ImageDraw.Draw(img)
-            
-            # Get file extension
-            _, ext = os.path.splitext(file_path)
-            ext = ext.lower().lstrip(".")
-            
-            # Draw file extension
-            font_size = min(size) // 4
+            # Clean up temporary file if it exists
             try:
-                font = ImageFont.truetype("Arial", font_size)
-            except IOError:
-                font = ImageFont.load_default()
-            
-            text_width, text_height = draw.textsize(ext.upper(), font=font)
-            position = ((size[0] - text_width) // 2, (size[1] - text_height) // 2)
-            
-            draw.text(position, ext.upper(), fill=(100, 100, 100), font=font)
-            
-            # Save to bytes
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            
-            return buffer.getvalue()
+                if 'temp_path' in locals():
+                    os.unlink(temp_path)
+            except:
+                pass
+                
+            # Handle error
+            error_msg = f"Error processing uploaded file {filename}: {str(e)}"
+            logger.error(error_msg)
+            raise DocumentProcessingError(error_msg) from e
+    
+    def get_supported_formats(self) -> List[str]:
+        """
+        Get list of supported document formats.
         
-        except Exception as e:
-            logger.error(f"Error generating generic thumbnail: {str(e)}")
+        Returns:
+            List of supported format extensions
+        """
+        return list(self.supported_formats.keys())
+    
+    def is_format_supported(self, filename: str) -> bool:
+        """
+        Check if a file format is supported.
+        
+        Args:
+            filename: Filename to check
+            
+        Returns:
+            True if format is supported, False otherwise
+        """
+        _, ext = os.path.splitext(filename)
+        ext = ext.lower().lstrip('.')
+        return ext in self.supported_formats
+    
+    def get_thumbnail(
+        self,
+        file_path: str,
+        width: int = 200,
+        height: int = 300
+    ) -> Optional[str]:
+        """
+        Get a thumbnail image for a document.
+        
+        Args:
+            file_path: Path to the document file
+            width: Desired width of the thumbnail
+            height: Desired height of the thumbnail
+            
+        Returns:
+            Base64 encoded thumbnail image or None if failed
+        """
+        if not os.path.exists(file_path):
+            logger.error(f"File not found for thumbnail: {file_path}")
             return None
+        
+        # Get file extension
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower().lstrip('.')
+        
+        # Check if format is supported
+        if ext not in self.supported_formats:
+            logger.error(f"Unsupported document format for thumbnail: {ext}")
+            return None
+        
+        try:
+            # Get appropriate processor
+            processor = self.supported_formats[ext]
+            
+            # Get thumbnail
+            logger.info(f"Generating thumbnail for {file_path}")
+            return processor.get_thumbnail(file_path, width=width, height=height)
+            
+        except Exception as e:
+            logger.error(f"Error creating thumbnail for {file_path}: {str(e)}")
+            return None
+            
+    def extract_page_as_image(
+        self,
+        file_path: str,
+        page_number: int = 0,
+        dpi: int = 200
+    ) -> Dict[str, Any]:
+        """
+        Extract a specific page as an image (PDF only).
+        
+        Args:
+            file_path: Path to the PDF file
+            page_number: Page number to extract (0-indexed)
+            dpi: DPI for image extraction
+            
+        Returns:
+            Dictionary with image data
+        """
+        if not os.path.exists(file_path):
+            logger.error(f"File not found for page extraction: {file_path}")
+            return {'image': None}
+        
+        # Get file extension
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower().lstrip('.')
+        
+        # Check if file is PDF
+        if ext != 'pdf':
+            logger.error(f"Page extraction only supported for PDF files, not {ext}")
+            return {'image': None}
+        
+        try:
+            # Extract page as image
+            logger.info(f"Extracting page {page_number} from {file_path}")
+            return self.pdf_processor.extract_page_as_image(
+                file_path,
+                page_number=page_number,
+                dpi=dpi
+            )
+            
+        except Exception as e:
+            logger.error(f"Error extracting page from {file_path}: {str(e)}")
+            return {'image': None}

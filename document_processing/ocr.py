@@ -1,317 +1,347 @@
 """
-OCR (Optical Character Recognition) functionality for Book Knowledge AI.
-Handles text extraction from images.
+OCR module for Book Knowledge AI.
+
+This module provides OCR (Optical Character Recognition) functionality
+for extracting text from images and scanned documents.
 """
 
 import os
+import io
 import tempfile
-from typing import Dict, List, Union, Any, Optional, Callable
-from pathlib import Path
+from typing import Dict, List, Any, Optional, Union, Callable, Tuple, BinaryIO
 
+from utils.logger import get_logger
+from core.exceptions import OcrError
+
+# Initialize logger
+logger = get_logger(__name__)
+
+# Try to import required libraries
 try:
     import pytesseract
     from PIL import Image, ImageEnhance
+    OCR_AVAILABLE = True
 except ImportError:
-    # Log the import error, but allow the module to be imported
-    import logging
-    logging.getLogger(__name__).error("pytesseract or PIL not installed. OCR functionality will not be available.")
+    logger.warning("pytesseract or PIL not available. OCR functionality will be limited.")
+    OCR_AVAILABLE = False
 
-from utils.logger import get_logger
-from core.exceptions import OCRError
-
-# Get a logger for this module
-logger = get_logger(__name__)
-
-def extract_text_from_image(image: Union[str, bytes, Image.Image], 
-                          lang: str = 'eng',
-                          preprocess: bool = True,
-                          confidence_threshold: float = 70.0) -> Dict[str, Any]:
+class OCRProcessor:
     """
-    Extract text from an image using OCR.
-    
-    Args:
-        image: Path to image file, image data in bytes, or PIL Image
-        lang: Language code for OCR (default: 'eng')
-        preprocess: Whether to preprocess the image for better OCR results
-        confidence_threshold: Minimum confidence level (percentage) for including text
-        
-    Returns:
-        Dictionary with extracted content:
-        {
-            'text': str,  # Full extracted text
-            'words': List[Dict],  # Words with positions and confidence scores
-            'confidence': float  # Overall confidence score
-        }
-        
-    Raises:
-        OCRError: If OCR processing fails
+    OCR processor for extracting text from images.
     """
-    logger.info(f"Extracting text from image (lang: {lang}, preprocess: {preprocess})")
     
-    try:
-        # Convert input to PIL Image
-        img = _get_image(image)
+    def __init__(self, tesseract_cmd: Optional[str] = None):
+        """
+        Initialize the OCR processor.
         
-        # Preprocess image if requested
-        if preprocess:
-            img = _preprocess_image(img)
-        
-        # Configure pytesseract to get detailed output
-        custom_config = f'--oem 3 --psm 6 -l {lang}'
-        
-        # Extract text with detailed data
-        data = pytesseract.image_to_data(img, config=custom_config, output_type=pytesseract.Output.DICT)
-        
-        # Filter words by confidence
-        filtered_text = []
-        words = []
-        total_confidence = 0
-        word_count = 0
-        
-        for i in range(len(data['text'])):
-            # Skip empty text
-            if not data['text'][i].strip():
-                continue
+        Args:
+            tesseract_cmd: Optional path to tesseract executable
+        """
+        if not OCR_AVAILABLE:
+            logger.warning("OCR dependencies not available. OCR functionality will be limited.")
+            return
             
-            # Get word data
-            word = data['text'][i]
-            conf = float(data['conf'][i])
+        # Set tesseract command if provided
+        if tesseract_cmd:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
             
-            # Only include words above confidence threshold
-            if conf >= confidence_threshold:
-                filtered_text.append(word)
-                words.append({
-                    'text': word,
-                    'confidence': conf,
-                    'left': data['left'][i],
-                    'top': data['top'][i],
-                    'width': data['width'][i],
-                    'height': data['height'][i],
-                    'line_num': data['line_num'][i],
-                    'block_num': data['block_num'][i],
-                    'page_num': data['page_num'][i]
-                })
-                
-                total_confidence += conf
-                word_count += 1
+        # Log OCR initialization
+        try:
+            # Try to get tesseract version
+            version = pytesseract.get_tesseract_version()
+            logger.info(f"Initialized OCR processor (Tesseract version: {version})")
+        except Exception as e:
+            logger.warning(f"Initialized OCR processor, but could not get Tesseract version: {str(e)}")
+    
+    def process_image(
+        self,
+        image_path: str,
+        lang: str = 'eng',
+        preprocessing: bool = True,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Process an image file with OCR.
         
-        # Calculate overall confidence
-        overall_confidence = total_confidence / max(1, word_count)
-        
-        # Format the text with spaces and line breaks
-        formatted_text = ''
-        current_line = -1
-        current_block = -1
-        
-        for i, word_data in enumerate(words):
-            # Check if we're starting a new block
-            if word_data['block_num'] != current_block:
-                if i > 0:  # Add blank line between blocks (except before first block)
-                    formatted_text += '\n\n'
-                current_block = word_data['block_num']
-                current_line = word_data['line_num']
-            # Check if we're starting a new line in the same block
-            elif word_data['line_num'] != current_line:
-                formatted_text += '\n'
-                current_line = word_data['line_num']
-            # Same line, add space before word (except at start of line)
-            elif i > 0 and words[i-1]['line_num'] == current_line:
-                formatted_text += ' '
+        Args:
+            image_path: Path to the image file
+            lang: Language for OCR (ISO 639-2 code)
+            preprocessing: Whether to preprocess the image
+            progress_callback: Optional callback function for progress updates
             
-            # Add the word
-            formatted_text += word_data['text']
+        Returns:
+            Dictionary with extracted text
+        """
+        if not OCR_AVAILABLE:
+            return {'text': ''}
+            
+        if not os.path.exists(image_path):
+            error_msg = f"Image file not found: {image_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
         
-        return {
-            'text': formatted_text.strip(),
-            'words': words,
-            'confidence': overall_confidence
-        }
-    
-    except Exception as e:
-        logger.error(f"OCR processing failed: {str(e)}")
-        raise OCRError(f"Failed to extract text from image: {str(e)}")
-
-def extract_text_from_images(images: List[Union[str, bytes, Image.Image]], 
-                           lang: str = 'eng',
-                           preprocess: bool = True,
-                           confidence_threshold: float = 70.0,
-                           progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-    """
-    Extract text from multiple images using OCR.
-    
-    Args:
-        images: List of image paths, image data in bytes, or PIL Images
-        lang: Language code for OCR (default: 'eng')
-        preprocess: Whether to preprocess images for better OCR results
-        confidence_threshold: Minimum confidence level (percentage) for including text
-        progress_callback: Optional callback for progress updates
-        
-    Returns:
-        Dictionary with extracted content:
-        {
-            'text': str,  # Combined extracted text from all images
-            'pages': List[Dict],  # Text and confidence by page
-            'confidence': float  # Overall confidence score
-        }
-    """
-    logger.info(f"Extracting text from {len(images)} images")
-    
-    try:
-        # Process each image
-        results = []
-        all_text = []
-        total_confidence = 0
-        
-        for i, image in enumerate(images):
+        try:
             # Update progress
             if progress_callback:
-                progress_callback(i, len(images), {
-                    "text": f"OCR processing image {i+1}/{len(images)}",
-                    "type": "ocr_processing"
-                })
+                progress_callback(0.1, "Loading image...")
+                
+            # Open the image
+            image = Image.open(image_path)
             
-            # Process image
-            result = extract_text_from_image(image, lang, preprocess, confidence_threshold)
-            results.append(result)
+            # Preprocess image if requested
+            if preprocessing:
+                if progress_callback:
+                    progress_callback(0.3, "Preprocessing image...")
+                image = self._preprocess_image(image)
             
-            # Add text and update confidence
-            all_text.append(result['text'])
-            total_confidence += result['confidence']
+            # Perform OCR
+            if progress_callback:
+                progress_callback(0.5, "Performing OCR...")
+                
+            text = pytesseract.image_to_string(image, lang=lang)
+            
+            # Log success
+            logger.info(f"OCR completed on {image_path}")
+            
+            if progress_callback:
+                progress_callback(1.0, "OCR completed")
+                
+            return {'text': text.strip()}
+            
+        except Exception as e:
+            error_msg = f"Error processing image with OCR: {str(e)}"
+            logger.error(error_msg)
+            raise OcrError(error_msg) from e
+    
+    def process_image_object(
+        self,
+        image: Union[Image.Image, bytes, BinaryIO],
+        lang: str = 'eng',
+        preprocessing: bool = True,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Process an image object with OCR.
         
-        # Calculate overall confidence
-        overall_confidence = total_confidence / max(1, len(images))
+        Args:
+            image: PIL Image object, bytes, or file-like object
+            lang: Language for OCR (ISO 639-2 code)
+            preprocessing: Whether to preprocess the image
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Dictionary with extracted text
+        """
+        if not OCR_AVAILABLE:
+            return {'text': ''}
         
-        # Format combined text with page breaks
-        combined_text = '\n\n------ Page Break ------\n\n'.join(all_text)
+        try:
+            # Update progress
+            if progress_callback:
+                progress_callback(0.1, "Loading image...")
+                
+            # Convert to PIL Image if needed
+            if isinstance(image, bytes) or hasattr(image, 'read'):
+                if hasattr(image, 'read'):
+                    # File-like object
+                    image_data = image.read()
+                else:
+                    # Bytes
+                    image_data = image
+                    
+                # Create PIL Image
+                image = Image.open(io.BytesIO(image_data))
+            
+            # Preprocess image if requested
+            if preprocessing:
+                if progress_callback:
+                    progress_callback(0.3, "Preprocessing image...")
+                image = self._preprocess_image(image)
+            
+            # Perform OCR
+            if progress_callback:
+                progress_callback(0.5, "Performing OCR...")
+                
+            text = pytesseract.image_to_string(image, lang=lang)
+            
+            # Log success
+            logger.info("OCR completed on image object")
+            
+            if progress_callback:
+                progress_callback(1.0, "OCR completed")
+                
+            return {'text': text.strip()}
+            
+        except Exception as e:
+            error_msg = f"Error processing image object with OCR: {str(e)}"
+            logger.error(error_msg)
+            raise OcrError(error_msg) from e
+    
+    def process_pdf(
+        self,
+        pdf_path: str,
+        lang: str = 'eng',
+        preprocessing: bool = True,
+        dpi: int = 300,
+        pages: Optional[List[int]] = None,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Process a PDF file with OCR.
         
-        return {
-            'text': combined_text,
-            'pages': [{'text': r['text'], 'confidence': r['confidence']} for r in results],
-            'confidence': overall_confidence
-        }
-    
-    except Exception as e:
-        logger.error(f"OCR processing failed for multiple images: {str(e)}")
-        raise OCRError(f"Failed to extract text from images: {str(e)}")
-
-def extract_text_from_pdf(pdf_path: str,
-                        lang: str = 'eng',
-                        preprocess: bool = True,
-                        confidence_threshold: float = 70.0,
-                        max_pages: Optional[int] = None,
-                        page_range: Optional[tuple] = None,
-                        progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-    """
-    Extract text from a PDF using OCR.
-    
-    Args:
-        pdf_path: Path to PDF file
-        lang: Language code for OCR (default: 'eng')
-        preprocess: Whether to preprocess images for better OCR results
-        confidence_threshold: Minimum confidence level (percentage) for including text
-        max_pages: Maximum number of pages to process (None for all)
-        page_range: Optional tuple (start, end) for page range to process (0-based)
-        progress_callback: Optional callback for progress updates
+        Args:
+            pdf_path: Path to the PDF file
+            lang: Language for OCR (ISO 639-2 code)
+            preprocessing: Whether to preprocess the images
+            dpi: DPI for PDF to image conversion
+            pages: Optional list of pages to process (0-indexed)
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Dictionary with extracted text
+        """
+        if not OCR_AVAILABLE:
+            return {'text': ''}
+            
+        if not os.path.exists(pdf_path):
+            error_msg = f"PDF file not found: {pdf_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
         
-    Returns:
-        Dictionary with extracted content:
-        {
-            'text': str,  # Combined extracted text from all pages
-            'pages': List[Dict],  # Text and confidence by page
-            'confidence': float  # Overall confidence score
-        }
-    """
-    logger.info(f"Extracting text from PDF: {pdf_path}")
+        try:
+            # Try to import pdf2image
+            try:
+                from pdf2image import convert_from_path
+            except ImportError:
+                error_msg = "pdf2image not available. Cannot process PDF with OCR."
+                logger.error(error_msg)
+                return {'text': ''}
+            
+            # Update progress
+            if progress_callback:
+                progress_callback(0.1, "Converting PDF to images...")
+                
+            # Convert PDF to images
+            if pages is not None:
+                # Convert only specified pages
+                pdf_images = convert_from_path(
+                    pdf_path,
+                    dpi=dpi,
+                    first_page=min(pages) + 1,  # pdf2image uses 1-indexed pages
+                    last_page=max(pages) + 1
+                )
+                # Filter out pages not in the list
+                if len(pdf_images) > len(pages):
+                    pdf_images = [pdf_images[i] for i in range(len(pdf_images)) if i in pages]
+            else:
+                # Convert all pages
+                pdf_images = convert_from_path(pdf_path, dpi=dpi)
+            
+            # Initialize result
+            all_text = []
+            total_pages = len(pdf_images)
+            
+            # Process each page
+            for i, image in enumerate(pdf_images):
+                # Update progress
+                if progress_callback:
+                    page_progress = 0.1 + (0.9 * (i / total_pages))
+                    progress_callback(page_progress, f"Processing page {i+1}/{total_pages}...")
+                
+                # Preprocess image if requested
+                if preprocessing:
+                    image = self._preprocess_image(image)
+                
+                # Perform OCR
+                text = pytesseract.image_to_string(image, lang=lang)
+                all_text.append(text.strip())
+            
+            # Combine text from all pages
+            combined_text = "\n\n".join(all_text)
+            
+            # Log success
+            logger.info(f"OCR completed on {pdf_path} ({total_pages} pages)")
+            
+            if progress_callback:
+                progress_callback(1.0, "OCR completed")
+                
+            return {'text': combined_text}
+            
+        except Exception as e:
+            error_msg = f"Error processing PDF with OCR: {str(e)}"
+            logger.error(error_msg)
+            raise OcrError(error_msg) from e
     
-    try:
-        # Convert PDF pages to images
-        from pdf2image import convert_from_path
+    def _preprocess_image(self, image: Image.Image) -> Image.Image:
+        """
+        Preprocess an image for better OCR results.
         
-        # Determine page range
-        first_page = None
-        last_page = None
+        Args:
+            image: PIL Image object
+            
+        Returns:
+            Preprocessed PIL Image object
+        """
+        try:
+            # Convert to RGB if needed
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Resize if too small
+            min_width = 1000
+            if image.width < min_width:
+                ratio = min_width / image.width
+                new_size = (min_width, int(image.height * ratio))
+                image = image.resize(new_size, Image.LANCZOS)
+            
+            # Enhance contrast
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.5)
+            
+            # Enhance sharpness
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(1.5)
+            
+            # Convert to grayscale
+            image = image.convert('L')
+            
+            return image
+            
+        except Exception as e:
+            logger.warning(f"Error preprocessing image: {str(e)}")
+            return image
+    
+    def is_available(self) -> bool:
+        """
+        Check if OCR functionality is available.
         
-        if page_range:
-            first_page = page_range[0] + 1  # pdf2image uses 1-based indexing
-            last_page = page_range[1] + 1
+        Returns:
+            True if OCR is available, False otherwise
+        """
+        if not OCR_AVAILABLE:
+            return False
+            
+        try:
+            # Try to get tesseract version
+            version = pytesseract.get_tesseract_version()
+            return True
+        except Exception:
+            return False
+    
+    def get_available_languages(self) -> List[str]:
+        """
+        Get list of available OCR languages.
         
-        # Convert PDF to images
-        images = convert_from_path(
-            pdf_path,
-            dpi=300,  # Higher DPI for better OCR
-            first_page=first_page,
-            last_page=last_page
-        )
-        
-        # Limit number of pages if specified
-        if max_pages is not None and max_pages > 0:
-            images = images[:max_pages]
-        
-        # Process images
-        return extract_text_from_images(images, lang, preprocess, 
-                                      confidence_threshold, progress_callback)
-    
-    except ImportError:
-        logger.error("pdf2image is not installed. Cannot extract text from PDF.")
-        raise OCRError("Missing dependency: pdf2image is required for PDF OCR")
-    
-    except Exception as e:
-        logger.error(f"OCR processing failed for PDF: {str(e)}")
-        raise OCRError(f"Failed to extract text from PDF: {str(e)}")
-
-def _get_image(image: Union[str, bytes, Image.Image]) -> Image.Image:
-    """
-    Convert various image inputs to PIL Image.
-    
-    Args:
-        image: Path to image file, image data in bytes, or PIL Image
-        
-    Returns:
-        PIL Image object
-    """
-    if isinstance(image, str):
-        # Path to image file
-        return Image.open(image)
-    
-    elif isinstance(image, bytes):
-        # Image data in bytes
-        import io
-        return Image.open(io.BytesIO(image))
-    
-    elif isinstance(image, Image.Image):
-        # Already a PIL Image
-        return image
-    
-    else:
-        raise ValueError("Unsupported image type. Expected file path, bytes, or PIL Image.")
-
-def _preprocess_image(image: Image.Image) -> Image.Image:
-    """
-    Preprocess image for better OCR results.
-    
-    Args:
-        image: PIL Image object
-        
-    Returns:
-        Preprocessed PIL Image
-    """
-    # Convert to grayscale
-    img = image.convert('L')
-    
-    # Increase contrast
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.0)
-    
-    # Increase sharpness
-    enhancer = ImageEnhance.Sharpness(img)
-    img = enhancer.enhance(2.0)
-    
-    # Resize if too small (below 1000px width)
-    width, height = img.size
-    if width < 1000:
-        ratio = 1000 / width
-        new_width = 1000
-        new_height = int(height * ratio)
-        img = img.resize((new_width, new_height), Image.LANCZOS)
-    
-    return img
+        Returns:
+            List of available language codes
+        """
+        if not OCR_AVAILABLE:
+            return []
+            
+        try:
+            # Try to get available languages
+            langs = pytesseract.get_languages()
+            return langs
+        except Exception as e:
+            logger.warning(f"Could not get available languages: {str(e)}")
+            return ['eng']  # Default to English

@@ -1,270 +1,427 @@
 """
-DOCX document processor for Book Knowledge AI.
-Handles extraction of text and images from DOCX files.
+DOCX processing module for document extraction.
+
+This module provides functionality for extracting text and images from DOCX files.
 """
 
 import os
 import io
-import zipfile
-from typing import Dict, List, Any, Optional, Callable, Union, BinaryIO
-from pathlib import Path
-
-import docx
-from docx.document import Document as DocxDocument
-from docx.oxml.text.paragraph import CT_P
-from docx.text.paragraph import Paragraph
-from docx.opc.constants import RELATIONSHIP_TYPE as RT
+import base64
+import tempfile
+from typing import Dict, List, Any, Optional, Union, Callable, Tuple
 
 from utils.logger import get_logger
-from core.exceptions import DocumentProcessingError
+from core.exceptions import DocumentProcessingError, DocumentFormatError
 
-# Get a logger for this module
+# Initialize logger
 logger = get_logger(__name__)
 
-def process_docx(file_path: str, include_images: bool = True, 
-                progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-    """
-    Process a DOCX file and extract its content.
-    
-    Args:
-        file_path: Path to the DOCX file
-        include_images: Whether to include images in the extraction
-        progress_callback: Optional callback for progress updates
-        
-    Returns:
-        Dictionary with extracted content:
-        {
-            'text': str,            # Full text content
-            'images': List[bytes],  # List of image data in bytes
-            'metadata': Dict        # Document metadata
-        }
-    """
-    logger.info(f"Processing DOCX file: {file_path}")
-    
-    try:
-        # Load the document
-        doc = docx.Document(file_path)
-        
-        # Extract text content
-        text_content = extract_text_from_docx(doc, progress_callback)
-        
-        # Extract images if requested
-        images = []
-        if include_images:
-            images = extract_images_from_docx(file_path, progress_callback)
-        
-        # Extract metadata
-        metadata = extract_metadata_from_docx(doc)
-        
-        # Return the extracted content
-        return {
-            'text': text_content,
-            'images': images,
-            'metadata': metadata
-        }
-    
-    except Exception as e:
-        logger.error(f"Error processing DOCX file: {str(e)}")
-        raise DocumentProcessingError(f"Failed to process DOCX file: {str(e)}")
+# Try to import required libraries
+try:
+    import docx
+    from docx.document import Document
+    from docx.oxml.text.paragraph import CT_P
+    from docx.text.paragraph import Paragraph
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+    DOCX_AVAILABLE = True
+except ImportError:
+    logger.warning("python-docx not available. DOCX processing will be limited.")
+    DOCX_AVAILABLE = False
 
-def extract_text_from_docx(doc: DocxDocument, 
-                         progress_callback: Optional[Callable] = None) -> str:
+class DOCXProcessor:
     """
-    Extract text from a DOCX document.
-    
-    Args:
-        doc: The docx.Document object
-        progress_callback: Optional callback for progress updates
-        
-    Returns:
-        Extracted text content
+    DOCX processor for extracting text and images from DOCX files.
     """
-    # Get all paragraphs
-    paragraphs = doc.paragraphs
     
-    # Initialize an empty text string
-    text = []
+    def __init__(self):
+        """Initialize the DOCX processor."""
+        # Check dependencies
+        if not DOCX_AVAILABLE:
+            logger.warning("python-docx not available. DOCX processing will be limited.")
     
-    # Calculate total number of paragraphs for progress tracking
-    total_paragraphs = len(paragraphs)
-    
-    # Process each paragraph
-    for i, paragraph in enumerate(paragraphs):
-        # Skip empty paragraphs
-        if paragraph.text.strip():
-            text.append(paragraph.text)
+    def process(
+        self, 
+        file_path: str, 
+        extract_images: bool = True,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Process a DOCX file and extract text and optionally images.
         
-        # Update progress
-        if progress_callback and total_paragraphs > 0:
-            progress = i / total_paragraphs
-            progress_callback(i, total_paragraphs, {
-                "text": f"Extracting text: paragraph {i+1}/{total_paragraphs}",
-                "type": "text_extraction"
-            })
-    
-    # Process tables
-    for i, table in enumerate(doc.tables):
-        # Add a paragraph break before table content
-        text.append("\n")
-        
-        # Process each row and cell
-        for row in table.rows:
-            row_text = []
-            for cell in row.cells:
-                # Get text from the cell
-                cell_text = cell.text.strip()
-                if cell_text:
-                    row_text.append(cell_text)
+        Args:
+            file_path: Path to the DOCX file
+            extract_images: Whether to extract images
+            progress_callback: Optional callback function for progress updates
             
-            # Add the row text to the document text
-            if row_text:
-                text.append(" | ".join(row_text))
+        Returns:
+            A dictionary with extracted content:
+            {
+                'text': Extracted text as a string,
+                'images': List of image descriptions with embedded base64 data (if extract_images=True)
+            }
+        """
+        if not os.path.exists(file_path):
+            error_msg = f"DOCX file not found: {file_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
         
-        # Add a paragraph break after table content
-        text.append("\n")
+        if not file_path.lower().endswith(('.docx', '.doc')):
+            error_msg = f"Not a DOCX file: {file_path}"
+            logger.error(error_msg)
+            raise DocumentFormatError(error_msg)
         
-        # Update progress
-        if progress_callback:
-            progress_callback(total_paragraphs + i, total_paragraphs + len(doc.tables), {
-                "text": f"Extracting table {i+1}/{len(doc.tables)}",
-                "type": "table_extraction"
-            })
-    
-    # Join all paragraph texts with newlines
-    return "\n".join(text)
-
-def extract_images_from_docx(file_path: str, 
-                           progress_callback: Optional[Callable] = None) -> List[bytes]:
-    """
-    Extract images from a DOCX file.
-    
-    Args:
-        file_path: Path to the DOCX file
-        progress_callback: Optional callback for progress updates
+        # Initialize result dictionary
+        result = {
+            'text': '',
+            'images': []
+        }
         
-    Returns:
-        List of image data in bytes
-    """
-    images = []
-    
-    try:
-        # DOCX files are ZIP files, so we can open them as such
-        with zipfile.ZipFile(file_path) as zip_ref:
-            # Get a list of all files in the ZIP
-            file_list = zip_ref.namelist()
-            
-            # Filter for image files (in the word/media directory)
-            image_files = [f for f in file_list if f.startswith('word/media/')]
-            
-            # Calculate total number of images for progress tracking
-            total_images = len(image_files)
-            
-            # Extract each image
-            for i, image_path in enumerate(image_files):
-                # Read the image data
-                with zip_ref.open(image_path) as image_file:
-                    image_data = image_file.read()
-                    images.append(image_data)
+        try:
+            # Define a progress callback handler
+            def send_progress(current, total, message):
+                if progress_callback:
+                    progress_callback(current / total, message)
+                    
+            # Extract text from DOCX
+            if DOCX_AVAILABLE:
+                # Load the document
+                doc = docx.Document(file_path)
                 
+                # Extract text
+                text_result = self.extract_text(doc, progress_callback=send_progress)
+                result['text'] = text_result.get('text', '')
+                
+                # Extract images if requested
+                if extract_images:
+                    images_result = self.extract_images(file_path, doc, progress_callback=send_progress)
+                    result['images'] = images_result.get('images', [])
+            else:
+                logger.warning("python-docx not available, skipping DOCX processing")
+                                
+            # Log success
+            logger.info(f"Successfully processed DOCX file: {file_path}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Error processing DOCX file {file_path}: {str(e)}"
+            logger.error(error_msg)
+            raise DocumentProcessingError(error_msg) from e
+    
+    def extract_text(
+        self, 
+        document,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract text from a DOCX document.
+        
+        Args:
+            document: Loaded docx.Document object
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Dictionary with extracted text
+        """
+        if not DOCX_AVAILABLE:
+            return {'text': ''}
+        
+        try:
+            # Get paragraphs count for progress tracking
+            paragraphs = document.paragraphs
+            total_paragraphs = len(paragraphs)
+            
+            # Extract text from paragraphs
+            text_parts = []
+            for i, paragraph in enumerate(paragraphs):
                 # Update progress
-                if progress_callback and total_images > 0:
-                    progress = i / total_images
-                    progress_callback(i, total_images, {
-                        "text": f"Extracting image {i+1}/{total_images}",
-                        "type": "image_extraction"
-                    })
-    
-    except Exception as e:
-        logger.warning(f"Error extracting images from DOCX: {str(e)}")
-        # Continue with empty images list
-    
-    return images
-
-def extract_metadata_from_docx(doc: DocxDocument) -> Dict[str, Any]:
-    """
-    Extract metadata from a DOCX document.
-    
-    Args:
-        doc: The docx.Document object
-        
-    Returns:
-        Dictionary with metadata
-    """
-    # Initialize an empty metadata dictionary
-    metadata = {}
-    
-    try:
-        # Get core properties
-        core_properties = doc.core_properties
-        
-        # Extract available metadata
-        if core_properties.title:
-            metadata['title'] = core_properties.title
-        
-        if core_properties.author:
-            metadata['author'] = core_properties.author
-        
-        if core_properties.subject:
-            metadata['subject'] = core_properties.subject
-        
-        if core_properties.keywords:
-            # Split keywords by commas or semicolons
-            keywords = core_properties.keywords
-            keyword_list = [k.strip() for k in keywords.replace(';', ',').split(',') if k.strip()]
-            metadata['categories'] = keyword_list
-        
-        if core_properties.language:
-            metadata['language'] = core_properties.language
-        
-        if core_properties.created:
-            metadata['created'] = core_properties.created.isoformat()
-        
-        if core_properties.modified:
-            metadata['modified'] = core_properties.modified.isoformat()
-        
-        if core_properties.last_modified_by:
-            metadata['last_modified_by'] = core_properties.last_modified_by
-    
-    except Exception as e:
-        logger.warning(f"Error extracting metadata from DOCX: {str(e)}")
-        # Continue with partial metadata
-    
-    return metadata
-
-def get_docx_thumbnail(file_path: str, width: int = 200) -> Optional[str]:
-    """
-    Generate a thumbnail for a DOCX file.
-    Since DOCX files don't have natural thumbnails like PDFs,
-    this function looks for the first image in the document.
-    
-    Args:
-        file_path: Path to the DOCX file
-        width: Width of the thumbnail in pixels
-        
-    Returns:
-        Base64-encoded image data or None if generation fails
-    """
-    try:
-        # Extract images from the DOCX file
-        images = extract_images_from_docx(file_path)
-        
-        # If there are images, use the first one as the thumbnail
-        if images:
-            from utils.image_helpers import resize_image, image_to_base64
+                if progress_callback:
+                    progress_callback(i / total_paragraphs, f"Extracting text from paragraph {i+1}/{total_paragraphs}")
+                
+                # Add paragraph text
+                text_parts.append(paragraph.text)
             
-            # Get the first image
-            image_data = images[0]
+            # Get tables content
+            for i, table in enumerate(document.tables):
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        row_text.append(cell.text)
+                    text_parts.append(' | '.join(row_text))
             
-            # Resize the image
-            resized_image = resize_image(image_data, width=width)
+            # Join all text parts
+            full_text = '\n\n'.join(text_parts)
             
-            # Convert to base64
-            if resized_image:
-                return image_to_base64(resized_image)
-        
-        # If no images found, return None
-        return None
+            # Log success
+            logger.info(f"Extracted text from {total_paragraphs} paragraphs")
+            return {'text': full_text.strip()}
+            
+        except Exception as e:
+            logger.error(f"Error extracting text from DOCX: {str(e)}")
+            return {'text': ''}
     
-    except Exception as e:
-        logger.error(f"Error creating DOCX thumbnail: {str(e)}")
-        return None
+    def extract_images(
+        self,
+        file_path: str,
+        document,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract images from a DOCX file.
+        
+        Args:
+            file_path: Path to the DOCX file
+            document: Loaded docx.Document object
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            Dictionary with list of images as base64 encoded strings
+        """
+        if not DOCX_AVAILABLE:
+            return {'images': []}
+        
+        try:
+            # Get document relationships
+            doc_part = document.part
+            image_parts = []
+            
+            # Find image relationships
+            for rel in doc_part.rels.values():
+                if rel.reltype == RT.IMAGE:
+                    image_parts.append(rel.target_part)
+            
+            # Extract images
+            images = []
+            total_images = len(image_parts)
+            
+            for i, image_part in enumerate(image_parts):
+                # Update progress
+                if progress_callback:
+                    progress_callback(i / total_images, f"Extracting image {i+1}/{total_images}")
+                
+                # Get image data
+                image_data = image_part.blob
+                
+                # Get image format
+                image_format = image_part.content_type.split('/')[-1]
+                if image_format == 'jpeg':
+                    image_format = 'jpg'
+                
+                # Encode image data as base64
+                img_base64 = base64.b64encode(image_data).decode('utf-8')
+                
+                # Add to result
+                images.append({
+                    'index': i,
+                    'type': 'embedded',
+                    'format': image_format,
+                    'data': img_base64
+                })
+            
+            # Log success
+            logger.info(f"Extracted {len(images)} images from DOCX file")
+            return {'images': images}
+            
+        except Exception as e:
+            logger.error(f"Error extracting images from DOCX: {str(e)}")
+            return {'images': []}
+    
+    def get_thumbnail(
+        self,
+        file_path: str,
+        width: int = 200,
+        height: int = 300
+    ) -> Optional[str]:
+        """
+        Get a thumbnail image for a DOCX file.
+        Uses the first image in the document if available.
+        
+        Args:
+            file_path: Path to the DOCX file
+            width: Desired width of the thumbnail
+            height: Desired height of the thumbnail
+            
+        Returns:
+            Base64 encoded thumbnail image or None if failed
+        """
+        try:
+            if not DOCX_AVAILABLE:
+                return None
+                
+            # Process the document
+            doc = docx.Document(file_path)
+            
+            # Extract images
+            images_result = self.extract_images(file_path, doc)
+            images = images_result.get('images', [])
+            
+            if not images:
+                # No images found, try to create a text thumbnail
+                return self._create_text_thumbnail(doc, width, height)
+            
+            # Use the first image as thumbnail
+            image_data = images[0]['data']
+            image_format = images[0]['format']
+            
+            # Create a thumbnail using PIL
+            try:
+                from PIL import Image
+                import io
+                import base64
+                
+                # Decode the base64 image
+                image_bytes = base64.b64decode(image_data)
+                
+                # Open the image
+                image = Image.open(io.BytesIO(image_bytes))
+                
+                # Resize the image while maintaining aspect ratio
+                original_width, original_height = image.size
+                aspect_ratio = original_width / original_height
+                
+                if width / height > aspect_ratio:
+                    # Height is the limiting factor
+                    new_height = height
+                    new_width = int(aspect_ratio * new_height)
+                else:
+                    # Width is the limiting factor
+                    new_width = width
+                    new_height = int(new_width / aspect_ratio)
+                
+                # Resize the image
+                resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+                
+                # Create a new image with the desired dimensions and paste the resized image
+                thumbnail = Image.new('RGB', (width, height), (255, 255, 255))
+                paste_x = (width - new_width) // 2
+                paste_y = (height - new_height) // 2
+                thumbnail.paste(resized_image, (paste_x, paste_y))
+                
+                # Save the thumbnail to a byte buffer
+                buffered = io.BytesIO()
+                thumbnail.save(buffered, format="JPEG", quality=85)
+                
+                # Get base64 encoded string
+                thumbnail_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                
+                return thumbnail_base64
+                
+            except ImportError:
+                logger.warning("PIL not available for thumbnail generation")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error creating thumbnail for {file_path}: {str(e)}")
+            return None
+    
+    def _create_text_thumbnail(
+        self,
+        document,
+        width: int = 200,
+        height: int = 300
+    ) -> Optional[str]:
+        """
+        Create a text-based thumbnail for a DOCX document.
+        
+        Args:
+            document: Loaded docx.Document object
+            width: Desired width of the thumbnail
+            height: Desired height of the thumbnail
+            
+        Returns:
+            Base64 encoded thumbnail image or None if failed
+        """
+        try:
+            # Get document title or first paragraph
+            title = None
+            for para in document.paragraphs:
+                if para.text.strip():
+                    title = para.text.strip()
+                    break
+            
+            if not title:
+                title = "DOCX Document"
+                
+            # Create text thumbnail using PIL
+            try:
+                from PIL import Image, ImageDraw, ImageFont
+                import io
+                import base64
+                import tempfile
+                
+                # Create a new image
+                image = Image.new('RGB', (width, height), (245, 245, 245))
+                draw = ImageDraw.Draw(image)
+                
+                # Draw background
+                draw.rectangle([(0, 0), (width, 40)], fill=(59, 89, 152))  # Header color
+                
+                # Draw DOCX icon
+                icon_margin = 20
+                icon_size = min(width - 2*icon_margin, height - 2*icon_margin - 40)
+                icon_box = (
+                    (width - icon_size) // 2,
+                    ((height - 40) - icon_size) // 2 + 40
+                )
+                draw.rectangle(
+                    [icon_box, (icon_box[0] + icon_size, icon_box[1] + icon_size)],
+                    fill=(255, 255, 255),
+                    outline=(200, 200, 200)
+                )
+                
+                # Draw document lines
+                line_width = int(icon_size * 0.7)
+                line_x = (width - line_width) // 2
+                line_y_start = icon_box[1] + int(icon_size * 0.2)
+                line_height = int(icon_size * 0.1)
+                line_gap = int(icon_size * 0.05)
+                
+                for i in range(4):
+                    y = line_y_start + i * (line_height + line_gap)
+                    draw.rectangle(
+                        [(line_x, y), (line_x + line_width, y + line_height)],
+                        fill=(220, 220, 220)
+                    )
+                
+                # Draw title text
+                try:
+                    # Try to load a font
+                    font = ImageFont.truetype("arial.ttf", 12)
+                except:
+                    # Use default font
+                    font = ImageFont.load_default()
+                
+                # Truncate title if it's too long
+                max_chars = 20
+                if len(title) > max_chars:
+                    title = title[:max_chars-3] + "..."
+                
+                # Get text size
+                text_width = draw.textlength(title, font=font)
+                text_x = (width - text_width) // 2
+                
+                # Draw title
+                draw.text((text_x, 15), title, font=font, fill=(255, 255, 255))
+                
+                # Draw format indicator
+                format_text = "DOCX"
+                format_width = draw.textlength(format_text, font=font)
+                format_x = (width - format_width) // 2
+                format_y = height - 25
+                draw.text((format_x, format_y), format_text, font=font, fill=(100, 100, 100))
+                
+                # Save the thumbnail to a byte buffer
+                buffered = io.BytesIO()
+                image.save(buffered, format="JPEG", quality=85)
+                
+                # Get base64 encoded string
+                thumbnail_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                
+                return thumbnail_base64
+                
+            except ImportError:
+                logger.warning("PIL not available for text thumbnail generation")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error creating text thumbnail: {str(e)}")
+            return None

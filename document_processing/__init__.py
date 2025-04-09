@@ -1,6 +1,10 @@
 """
 Document processing module for Book Knowledge AI application.
+
+This module provides functionality for processing different types of documents,
+extracting text, images, and metadata.
 """
 
 from document_processing.processor import DocumentProcessor
-from document_processing.metadata import extract_metadata
+
+__all__ = ['DocumentProcessor']
