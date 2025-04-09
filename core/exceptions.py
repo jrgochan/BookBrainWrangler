@@ -46,6 +46,10 @@ class ResponseGenerationError(AIError):
     """Exception raised when generating a response fails."""
     pass
 
+class AIClientError(AIError):
+    """Exception raised for AI client operations."""
+    pass
+
 class DatabaseError(BaseError):
     """Exception raised for database operations."""
     pass

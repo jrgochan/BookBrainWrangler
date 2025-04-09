@@ -56,3 +56,7 @@ pdf2image
 pypdf2
 pytesseract
 streamlit
+numpy
+openai
+requests
+huggingface_hub

@@ -1,40 +1,57 @@
 """
 Ollama client implementation for Book Knowledge AI.
+Ollama provides local execution of various AI models.
 """
 
+import os
 import json
-import requests
 import time
-from typing import Dict, List, Any, Optional, Union
+import socket
+import requests
+from typing import Dict, List, Any, Optional, Union, Tuple
 
 from utils.logger import get_logger
-from core.exceptions import AIClientError
+from core.exceptions import AIClientError, ModelNotFoundError, ResponseGenerationError
 from ai.client import AIClient
-from ai.ollama.models import ModelInfo, Message, EmbeddingVector
-from ai.ollama.utils import safe_parse_json, create_fallback_embedding, format_context_prompt
+from ai.models.common import Message, ModelInfo, EmbeddingVector
+from ai.utils import format_context_prompt, create_fallback_embedding, retry_with_exponential_backoff, safe_parse_json
 
 # Get logger for this module
 logger = get_logger(__name__)
 
 class OllamaClient(AIClient):
-    """Client for interacting with the Ollama API"""
+    """Client for interacting with Ollama API"""
     
-    def __init__(self, server_url="http://localhost:11434", model="llama2:7b", timeout=300):
+    DEFAULT_OLLAMA_HOST = "localhost"
+    DEFAULT_OLLAMA_PORT = 11434
+    
+    def __init__(self, 
+                 host: Optional[str] = None, 
+                 port: Optional[int] = None, 
+                 model: str = "llama2",
+                 **kwargs):
         """
         Initialize the Ollama client.
         
         Args:
-            server_url: URL of the Ollama server
-            model: Default model to use for queries
-            timeout: Default timeout for API requests in seconds (default: 5 minutes)
+            host: Ollama server host (falls back to OLLAMA_HOST or DEFAULT_OLLAMA_HOST)
+            port: Ollama server port (falls back to OLLAMA_PORT or DEFAULT_OLLAMA_PORT)
+            model: Default model to use (default: llama2)
+            **kwargs: Additional arguments for initialization
         """
         super().__init__(model_name=model)
-        self.server_url = server_url
-        self.api_base = f"{server_url}/api"
-        self.timeout = timeout 
-        self.host = server_url  # Added for compatibility with existing code
-        logger.info(f"Initialized OllamaClient with server_url={server_url}, model={model}")
-    
+        
+        self.host = host or os.environ.get("OLLAMA_HOST") or self.DEFAULT_OLLAMA_HOST
+        self.port = port or int(os.environ.get("OLLAMA_PORT", self.DEFAULT_OLLAMA_PORT))
+        
+        # Set base URL for API requests
+        self.base_url = f"http://{self.host}:{self.port}"
+        
+        # Other client parameters
+        self.timeout = kwargs.get("timeout", 60)
+        
+        logger.info(f"Initialized OllamaClient with model={model}, host={self.host}, port={self.port}")
+        
     def is_server_running(self) -> bool:
         """
         Check if the Ollama server is running.
@@ -43,22 +60,44 @@ class OllamaClient(AIClient):
             bool: True if the server is running, False otherwise
         """
         try:
-            logger.debug(f"Checking Ollama server at {self.api_base}/tags")
-            response = requests.get(f"{self.api_base}/tags", timeout=5)
-            return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Error checking Ollama server status: {str(e)}")
+            # Try to connect to the server
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            s.connect((self.host, self.port))
+            s.close()
+            return True
+        except (socket.error, socket.timeout, ConnectionRefusedError):
+            logger.warning(f"Ollama server not running at {self.host}:{self.port}")
             return False
     
+    def is_available(self) -> bool:
+        """
+        Check if the Ollama API is available.
+        
+        Returns:
+            bool: True if the API is available, False otherwise
+        """
+        if not self.is_server_running():
+            return False
+            
+        try:
+            # Make a simple request to check if the API is accessible
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            return response.status_code == 200
+        except Exception as e:
+            logger.error(f"Error checking Ollama API availability: {str(e)}")
+            return False
+    
+    @retry_with_exponential_backoff(max_retries=2)
     def list_models(self) -> List[str]:
         """
-        List available models from the Ollama server.
+        List available models from Ollama.
         
         Returns:
             List of model names
         """
         try:
-            response = requests.get(f"{self.api_base}/tags", timeout=10)
+            response = requests.get(f"{self.base_url}/api/tags", timeout=self.timeout)
             response.raise_for_status()
             
             data = response.json()
@@ -66,7 +105,7 @@ class OllamaClient(AIClient):
             
             return models
         except Exception as e:
-            logger.error(f"Error listing models: {str(e)}")
+            logger.error(f"Error listing Ollama models: {str(e)}")
             raise AIClientError(f"Failed to list models: {str(e)}")
     
     def get_model_info(self, model_name: Optional[str] = None) -> ModelInfo:
@@ -82,24 +121,43 @@ class OllamaClient(AIClient):
         model = model_name or self.model_name
         
         try:
-            response = requests.post(
-                f"{self.api_base}/show",
-                json={"name": model},
-                timeout=10
-            )
+            # Ollama doesn't have a dedicated endpoint for model info
+            # We'll get the list of models and find the requested one
+            response = requests.get(f"{self.base_url}/api/tags", timeout=self.timeout)
             response.raise_for_status()
             
             data = response.json()
+            models = data.get('models', [])
+            
+            # Find the requested model
+            model_data = next((m for m in models if m['name'] == model), None)
+            
+            if not model_data:
+                raise ModelNotFoundError(f"Model '{model}' not found")
+            
+            # Extract model details
+            size = model_data.get('size', 0)
+            modified_at = model_data.get('modified_at', '')
+            details = {
+                'digest': model_data.get('digest', ''),
+                'parent_model': model_data.get('parent_model', ''),
+                'details': model_data.get('details', {})
+            }
+            
             return ModelInfo(
-                name=data.get('name', ''),
-                size=data.get('size', 0),
-                modified_at=data.get('modified_at', ''),
-                details=data
+                name=model,
+                provider="Ollama",
+                size=size,
+                modified_at=modified_at,
+                details=details
             )
+        except ModelNotFoundError:
+            raise
         except Exception as e:
             logger.error(f"Error getting model info for {model}: {str(e)}")
             raise AIClientError(f"Failed to get model info: {str(e)}")
     
+    @retry_with_exponential_backoff(max_retries=2)
     def generate_response(self, prompt: str, **kwargs) -> str:
         """
         Generate a response from the model.
@@ -113,32 +171,40 @@ class OllamaClient(AIClient):
         """
         model = kwargs.get('model', self.model_name)
         temperature = kwargs.get('temperature', 0.7)
-        max_tokens = kwargs.get('max_tokens', 2048)
+        
+        # Prepare the request payload
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        # Add temperature and other parameters if provided
+        if temperature is not None:
+            payload["temperature"] = temperature
+            
+        # Add any other parameters
+        for k, v in kwargs.items():
+            if k not in ['model', 'prompt', 'stream']:
+                payload[k] = v
         
         try:
             logger.debug(f"Generating response with model={model}, temp={temperature}")
+            
             response = requests.post(
-                f"{self.api_base}/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    **{k: v for k, v in kwargs.items() if k not in ['model', 'temperature', 'max_tokens']}
-                },
-                timeout=self.timeout,
-                stream=False
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=self.timeout
             )
             response.raise_for_status()
             
             data = response.json()
-            generated_text = data.get('response', '')
-            
-            return generated_text
+            return data.get('response', '')
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
-            raise AIClientError(f"Failed to generate response: {str(e)}")
+            raise ResponseGenerationError(f"Failed to generate response: {str(e)}")
     
+    @retry_with_exponential_backoff(max_retries=2)
     def generate_chat_response(self, 
                             messages: List[Dict[str, str]], 
                             system_prompt: Optional[str] = None,
@@ -158,45 +224,55 @@ class OllamaClient(AIClient):
         temperature = kwargs.get('temperature', 0.7)
         context = kwargs.get('context', '')
         
+        # Prepare the messages in Ollama's format
+        formatted_messages = []
+        
+        # Add the system prompt if provided
+        if system_prompt:
+            formatted_messages.append({"role": "system", "content": system_prompt})
+        
+        # Process the conversation messages
+        for msg in messages:
+            role = msg['role']
+            content = msg['content']
+            
+            # Add context to first user message if provided
+            if context and role == 'user' and not any(m['role'] == 'user' for m in formatted_messages):
+                content = format_context_prompt(content, context)
+            
+            formatted_messages.append({"role": role, "content": content})
+        
+        # Prepare the request payload
+        payload = {
+            "model": model,
+            "messages": formatted_messages,
+            "stream": False
+        }
+        
+        # Add temperature and other parameters if provided
+        if temperature is not None:
+            payload["temperature"] = temperature
+            
+        # Add any other parameters
+        for k, v in kwargs.items():
+            if k not in ['model', 'messages', 'stream', 'context']:
+                payload[k] = v
+        
         try:
-            formatted_messages = [
-                Message(role=msg['role'], content=msg['content'])
-                for msg in messages
-            ]
-            
-            # Add context to the first user message if provided
-            if context and formatted_messages:
-                for i, msg in enumerate(formatted_messages):
-                    if msg.role == 'user':
-                        formatted_messages[i].content = format_context_prompt(msg.content, context)
-                        break
-            
-            request_data = {
-                "model": model,
-                "messages": [msg.to_dict() for msg in formatted_messages],
-                "temperature": temperature,
-                **{k: v for k, v in kwargs.items() if k not in ['model', 'temperature', 'context']}
-            }
-            
-            if system_prompt:
-                request_data["system"] = system_prompt
-            
             logger.debug(f"Generating chat response with model={model}, temp={temperature}")
+            
             response = requests.post(
-                f"{self.api_base}/chat",
-                json=request_data,
-                timeout=self.timeout,
-                stream=False
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=self.timeout
             )
             response.raise_for_status()
             
             data = response.json()
-            generated_text = data.get('message', {}).get('content', '')
-            
-            return generated_text
+            return data.get('message', {}).get('content', '')
         except Exception as e:
             logger.error(f"Error generating chat response: {str(e)}")
-            raise AIClientError(f"Failed to generate chat response: {str(e)}")
+            raise ResponseGenerationError(f"Failed to generate chat response: {str(e)}")
     
     def create_embedding(self, text: str, model: Optional[str] = None) -> EmbeddingVector:
         """
@@ -212,23 +288,23 @@ class OllamaClient(AIClient):
         embedding_model = model or self.model_name
         
         try:
+            # Prepare the request payload
+            payload = {
+                "model": embedding_model,
+                "prompt": text
+            }
+            
             response = requests.post(
-                f"{self.api_base}/embeddings",
-                json={
-                    "model": embedding_model,
-                    "prompt": text
-                },
+                f"{self.base_url}/api/embeddings",
+                json=payload,
                 timeout=self.timeout
             )
+            response.raise_for_status()
             
-            if response.status_code == 200:
-                data = response.json()
-                embedding = data.get('embedding', [])
-                return EmbeddingVector(values=embedding, text=text, model=embedding_model)
-            else:
-                logger.warning(f"Failed to create embedding, status: {response.status_code}. Using fallback.")
-                return create_fallback_embedding(text, embedding_model)
-                
+            data = response.json()
+            embedding = data.get('embedding', [])
+            
+            return EmbeddingVector(values=embedding, text=text, model=embedding_model)
         except Exception as e:
             logger.error(f"Error creating embedding: {str(e)}. Using fallback.")
-            return create_fallback_embedding(text, embedding_model)
+            return create_fallback_embedding(text, f"ollama-{embedding_model}")
