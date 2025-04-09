@@ -17,17 +17,19 @@ from typing import Dict, List, Any, Optional, Union
 logger = logging.getLogger(__name__)
 
 class OllamaClient:
-    def __init__(self, server_url="http://localhost:11434", model="llama2"):
+    def __init__(self, server_url="http://localhost:11434", model="llama2", timeout=300):
         """
         Initialize the Ollama client.
         
         Args:
             server_url: URL of the Ollama server
             model: Default model to use for queries
+            timeout: Default timeout for API requests in seconds (default: 5 minutes)
         """
         self.server_url = server_url
         self.model = model
         self.api_base = f"{server_url}/api"
+        self.timeout = timeout  # Store timeout as instance variable (5 minutes by default)
         # Added for compatibility with chat_with_ai.py
         self.host = server_url
         logger.info(f"Initialized OllamaClient with server_url={server_url}, model={model}")
@@ -178,7 +180,7 @@ class OllamaClient:
             
             logger.debug(f"Sending generate request to {self.api_base}/generate with model {model_to_use}")
             try:
-                response = requests.post(f"{self.api_base}/generate", json=payload, timeout=30)
+                response = requests.post(f"{self.api_base}/generate", json=payload, timeout=self.timeout)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -243,7 +245,7 @@ class OllamaClient:
             
             logger.debug(f"Sending chat request to {self.api_base}/chat with model {model_to_use}")
             try:
-                response = requests.post(f"{self.api_base}/chat", json=payload, timeout=30)
+                response = requests.post(f"{self.api_base}/chat", json=payload, timeout=self.timeout)
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -305,7 +307,7 @@ class OllamaClient:
             
             logger.debug(f"Sending embeddings request for text of length {len(text)}")
             try:
-                response = requests.post(f"{self.api_base}/embeddings", json=payload, timeout=30)
+                response = requests.post(f"{self.api_base}/embeddings", json=payload, timeout=self.timeout)
                 
                 if response.status_code == 200:
                     data = response.json()
