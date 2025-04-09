@@ -41,3 +41,6 @@ altair
 loguru
 numpy
 easyocr
+easyocr
+numpy
+pytesseract

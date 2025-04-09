@@ -150,6 +150,12 @@ class OllamaClient:
         """
         model_to_use = model or self.model
         
+        # First, check if Ollama server is running
+        if not self.is_server_running():
+            # Provide a fallback response when server is not available
+            logger.warning("Ollama server is not available for generate_response request")
+            return "Sorry, the Ollama AI server is not available right now. Please check your Ollama installation and configuration in the Settings tab."
+        
         try:
             # Prepare the request payload
             payload = {
@@ -171,29 +177,33 @@ class OllamaClient:
                 payload["prompt"] = context_prompt
             
             logger.debug(f"Sending generate request to {self.api_base}/generate with model {model_to_use}")
-            response = requests.post(f"{self.api_base}/generate", json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                generated_text = data.get("response", "")
-                logger.debug(f"Generated {len(generated_text)} chars of text")
-                return generated_text
-            else:
-                error_message = f"Error from Ollama API: Status code {response.status_code}"
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        error_message += f" - {error_data['error']}"
-                except:
-                    pass
+            try:
+                response = requests.post(f"{self.api_base}/generate", json=payload, timeout=30)
                 
-                logger.error(error_message)
-                return f"Error: {error_message}"
+                if response.status_code == 200:
+                    data = response.json()
+                    generated_text = data.get("response", "")
+                    logger.debug(f"Generated {len(generated_text)} chars of text")
+                    return generated_text
+                else:
+                    error_message = f"Error from Ollama API: Status code {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        if "error" in error_data:
+                            error_message += f" - {error_data['error']}"
+                    except:
+                        pass
+                    
+                    logger.error(error_message)
+                    return f"Error: {error_message}"
+            except requests.exceptions.RequestException as req_err:
+                logger.error(f"Request error: {str(req_err)}")
+                return f"Sorry, there was a problem connecting to the Ollama server: {str(req_err)}"
                 
         except Exception as e:
             error_message = f"Failed to generate response: {str(e)}"
             logger.error(error_message)
-            return f"Error: {error_message}"
+            return f"Sorry, an unexpected error occurred: {str(e)}"
     
     def chat(self, messages: List[Dict[str, str]], temperature: float = 0.7, 
             max_tokens: int = 1000, model: Optional[str] = None) -> Dict[str, str]:
@@ -216,6 +226,12 @@ class OllamaClient:
             logger.warning("No messages provided to chat method")
             return {"role": "assistant", "content": "I didn't receive any messages to respond to."}
         
+        # First, check if Ollama server is running
+        if not self.is_server_running():
+            # Provide a fallback response when server is not available
+            logger.warning("Ollama server is not available for chat request")
+            return {"role": "assistant", "content": "Sorry, the Ollama AI server is not available right now. Please check your Ollama installation and configuration in the Settings tab."}
+        
         try:
             # Prepare the request payload
             payload = {
@@ -226,29 +242,33 @@ class OllamaClient:
             }
             
             logger.debug(f"Sending chat request to {self.api_base}/chat with model {model_to_use}")
-            response = requests.post(f"{self.api_base}/chat", json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                message = data.get("message", {})
-                logger.debug(f"Received chat response with content length: {len(message.get('content', ''))}")
-                return message
-            else:
-                error_message = f"Error from Ollama API: Status code {response.status_code}"
-                try:
-                    error_data = response.json()
-                    if "error" in error_data:
-                        error_message += f" - {error_data['error']}"
-                except:
-                    pass
+            try:
+                response = requests.post(f"{self.api_base}/chat", json=payload, timeout=30)
                 
-                logger.error(error_message)
-                return {"role": "assistant", "content": f"Error: {error_message}"}
+                if response.status_code == 200:
+                    data = response.json()
+                    message = data.get("message", {})
+                    logger.debug(f"Received chat response with content length: {len(message.get('content', ''))}")
+                    return message
+                else:
+                    error_message = f"Error from Ollama API: Status code {response.status_code}"
+                    try:
+                        error_data = response.json()
+                        if "error" in error_data:
+                            error_message += f" - {error_data['error']}"
+                    except:
+                        pass
+                    
+                    logger.error(error_message)
+                    return {"role": "assistant", "content": f"Error: {error_message}"}
+            except requests.exceptions.RequestException as req_err:
+                logger.error(f"Request error in chat method: {str(req_err)}")
+                return {"role": "assistant", "content": f"Sorry, there was a problem connecting to the Ollama server: {str(req_err)}"}
                 
         except Exception as e:
             error_message = f"Failed to generate chat response: {str(e)}"
             logger.error(error_message)
-            return {"role": "assistant", "content": f"Error: {error_message}"}
+            return {"role": "assistant", "content": f"Sorry, an unexpected error occurred: {str(e)}"}
     
     def generate_embeddings(self, text: str, model: Optional[str] = None) -> List[float]:
         """
@@ -263,6 +283,19 @@ class OllamaClient:
         """
         model_to_use = model or self.model
         
+        # First, check if Ollama server is running
+        if not self.is_server_running():
+            logger.warning("Ollama server is not available for embeddings request, using fallback")
+            # Create a simple fallback embedding - we need to import numpy here
+            try:
+                import numpy as np
+                fallback_embedding = list(np.zeros(384).astype(float))
+                return fallback_embedding
+            except ImportError:
+                logger.error("Failed to import numpy for fallback embedding")
+                # Super simple fallback if numpy is not available
+                return [0.0] * 384
+        
         try:
             # Prepare the request payload
             payload = {
@@ -271,23 +304,45 @@ class OllamaClient:
             }
             
             logger.debug(f"Sending embeddings request for text of length {len(text)}")
-            response = requests.post(f"{self.api_base}/embeddings", json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                embedding = data.get("embedding", [])
-                logger.debug(f"Generated embedding with {len(embedding)} dimensions")
-                return embedding
-            else:
-                logger.error(f"Error generating embedding: Status code {response.status_code}")
-                # Return a fallback embedding (this is not ideal but prevents crashes)
-                import numpy as np
-                fallback_embedding = list(np.random.normal(0, 0.1, 384).astype(float))
-                return fallback_embedding
+            try:
+                response = requests.post(f"{self.api_base}/embeddings", json=payload, timeout=30)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    embedding = data.get("embedding", [])
+                    logger.debug(f"Generated embedding with {len(embedding)} dimensions")
+                    return embedding
+                else:
+                    logger.error(f"Error generating embedding: Status code {response.status_code}")
+                    # Create a zero embedding as fallback
+                    try:
+                        import numpy as np
+                        fallback_embedding = list(np.zeros(384).astype(float))
+                        return fallback_embedding
+                    except ImportError:
+                        logger.error("Failed to import numpy for fallback embedding")
+                        # Super simple fallback if numpy is not available
+                        return [0.0] * 384
+            except requests.exceptions.RequestException as req_err:
+                logger.error(f"Request error in embeddings method: {str(req_err)}")
+                # Create a zero embedding as fallback
+                try:
+                    import numpy as np
+                    fallback_embedding = list(np.zeros(384).astype(float))
+                    return fallback_embedding
+                except ImportError:
+                    logger.error("Failed to import numpy for fallback embedding")
+                    # Super simple fallback if numpy is not available
+                    return [0.0] * 384
                 
         except Exception as e:
             logger.error(f"Failed to generate embedding: {str(e)}")
-            # Return a fallback embedding (this is not ideal but prevents crashes)
-            import numpy as np
-            fallback_embedding = list(np.random.normal(0, 0.1, 384).astype(float))
-            return fallback_embedding
+            # Create a zero embedding as fallback
+            try:
+                import numpy as np
+                fallback_embedding = list(np.zeros(384).astype(float))
+                return fallback_embedding
+            except ImportError:
+                logger.error("Failed to import numpy for fallback embedding")
+                # Super simple fallback if numpy is not available
+                return [0.0] * 384
