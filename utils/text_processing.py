@@ -14,6 +14,34 @@ from utils.logger import get_logger
 # Get a logger for this module
 logger = get_logger(__name__)
 
+def analyze_word_frequency(text: str, min_length: int = 3, max_words: int = 20, 
+                          exclude_stopwords: bool = True) -> List[Tuple[str, int]]:
+    """
+    Analyze the frequency of words in a text.
+    
+    Args:
+        text: The text to analyze
+        min_length: Minimum word length to include in analysis
+        max_words: Maximum number of words to return
+        exclude_stopwords: Whether to exclude common stopwords
+        
+    Returns:
+        List of (word, frequency) tuples, sorted by frequency (descending)
+    """
+    # Get word frequencies
+    frequencies = calculate_word_frequencies(
+        text=text,
+        remove_stopwords_flag=exclude_stopwords,
+        min_word_length=min_length,
+        max_words=None  # We'll limit later
+    )
+    
+    # Sort by frequency (descending)
+    sorted_frequencies = sorted(frequencies.items(), key=lambda x: x[1], reverse=True)
+    
+    # Limit to max_words
+    return sorted_frequencies[:max_words]
+
 def clean_text(text: str) -> str:
     """
     Clean text by removing extra whitespace and normalizing unicode.

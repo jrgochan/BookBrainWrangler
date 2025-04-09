@@ -147,23 +147,18 @@ def render_document_details(document_id: str, knowledge_base: Any, on_back: Opti
             # Calculate word frequencies
             if document.get("chunks", []):
                 all_text = " ".join(document.get("chunks", []))
-                words = all_text.lower().split()
-                word_freq = {}
                 
-                for word in words:
-                    # Clean the word
-                    word = word.strip('.,!?()[]{}":;')
-                    if len(word) > 3:  # Only count words longer than 3 chars
-                        if word in word_freq:
-                            word_freq[word] += 1
-                        else:
-                            word_freq[word] = 1
+                # Use the analyze_word_frequency function from utils
+                from utils.text_processing import analyze_word_frequency
                 
-                # Sort by frequency
-                sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+                # Get the top 20 words with at least 3 characters
+                top_words = analyze_word_frequency(
+                    text=all_text,
+                    min_length=3,
+                    max_words=20,
+                    exclude_stopwords=True
+                )
                 
-                # Display top words
-                top_words = sorted_words[:20]
                 if top_words:
                     # Create a horizontal bar chart
                     df = pd.DataFrame(top_words, columns=['Word', 'Frequency'])
