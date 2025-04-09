@@ -56,6 +56,7 @@ class FAISSVectorStore(BaseVectorStore):
             distance_func=distance_func
         )
         self.use_gpu = use_gpu and GPU_AVAILABLE
+        self.using_gpu = False  # Will be set to True if GPU is actually used
     
     def _init_store(self):
         """Initialize the FAISS vector store."""
