@@ -55,9 +55,14 @@ class FAISSVectorStore(BaseVectorStore):
             embedding_function=embedding_function,
             distance_func=distance_func
         )
-        # Initialize with a protected attribute
-        self._use_gpu = use_gpu and GPU_AVAILABLE
+        # Initialize with public attributes for direct access
+        self.gpu_enabled = use_gpu and GPU_AVAILABLE  # Public attribute
         self._using_gpu = False  # Will be set to True if GPU is actually used
+
+    # Backward compatibility property
+    @property
+    def _use_gpu(self) -> bool:
+        return self.gpu_enabled
         
     @property
     def use_gpu(self) -> bool:
@@ -77,7 +82,7 @@ class FAISSVectorStore(BaseVectorStore):
         Args:
             value: New value for use_gpu
         """
-        self._use_gpu = value and GPU_AVAILABLE
+        self.gpu_enabled = value and GPU_AVAILABLE
         
     @property
     def using_gpu(self) -> bool:
