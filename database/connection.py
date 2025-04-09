@@ -1,49 +1,39 @@
 """
-Database connection module for the application.
+Database connection for Book Knowledge AI application.
 """
 
 import os
 import sqlite3
-import time
+from typing import Optional
+
 from utils.logger import get_logger
 
 # Get a logger for this module
 logger = get_logger(__name__)
 
-def get_connection():
+# Database configuration
+DB_FILE = "book_manager.db"
+DB_PATH = os.path.join(os.getcwd(), DB_FILE)
+
+def get_connection() -> sqlite3.Connection:
     """
     Get a connection to the SQLite database.
-    Creates the database file if it doesn't exist.
     
     Returns:
-        A SQLite connection object
+        SQLite database connection
     """
-    start_time = time.time()
-    logger.debug("Getting database connection")
-    
     try:
-        # Get the base directory (project root)
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
-        # Database file path
-        db_path = os.path.join(base_dir, "book_manager.db")
-        logger.debug(f"Connecting to database at: {db_path}")
-        
-        # Track if this is a new database
-        db_exists = os.path.exists(db_path)
-        if not db_exists:
-            logger.info(f"Creating new database file at: {db_path}")
+        # Create database directory if it doesn't exist
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         
         # Connect to the database
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(DB_PATH)
         
-        # Enable foreign key support
+        # Enable foreign keys
         conn.execute("PRAGMA foreign_keys = ON")
         
-        elapsed_time = time.time() - start_time
-        logger.debug(f"Database connection established in {elapsed_time:.4f}s")
         return conn
         
-    except Exception as e:
-        logger.error(f"Failed to connect to database: {str(e)}")
+    except sqlite3.Error as e:
+        logger.error(f"Error connecting to database: {str(e)}")
         raise
