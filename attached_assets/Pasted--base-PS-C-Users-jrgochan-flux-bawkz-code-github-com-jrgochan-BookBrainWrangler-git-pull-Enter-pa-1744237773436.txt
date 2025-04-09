@@ -1,0 +1,102 @@
+(base) PS C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler> git pull
+Enter passphrase for key 'C:\Users\jrgochan.flux-bawkz\.ssh\jrgochan_github_com_id_ed25519': 
+remote: Enumerating objects: 1, done.
+remote: Counting objects: 100% (1/1), done.
+remote: Total 1 (delta 0), reused 1 (delta 0), pack-reused 0 (from 0)
+Unpacking objects: 100% (1/1), 370 bytes | 370.00 KiB/s, done.
+From github.com:jrgochan/BookBrainWrangler
+   ec699c1..5388b43  main       -> origin/main
+Updating ec699c1..5388b43
+Fast-forward
+(base) PS C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler> git fetch                      
+Enter passphrase for key 'C:\Users\jrgochan.flux-bawkz\.ssh\jrgochan_github_com_id_ed25519': 
+(base) PS C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler> git pull 
+Enter passphrase for key 'C:\Users\jrgochan.flux-bawkz\.ssh\jrgochan_github_com_id_ed25519': 
+Already up to date.
+(base) PS C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler> scripts/run_bookbrainwrangler.ps1
+Starting BookBrainWrangler application with Streamlit...
+Project root: C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://0.0.0.0:5000
+
+INFO - Logger initialized
+2025-04-09 16:24:44 - book_knowledge_ai - INFO - Logger initialized
+────────────────────────── Traceback (most recent call last) ───────────────────────────
+  C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamli
+  t\runtime\scriptrunner\exec_code.py:121 in exec_func_with_error_handling
+
+  C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamli
+  t\runtime\scriptrunner\script_runner.py:640 in code_to_exec
+
+  C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler\app.py:13 in
+  <module>
+
+     10 
+     11 from utils.logger import get_logger
+     12 from document_processing import DocumentProcessor
+  ❱  13 from knowledge_base import KnowledgeBase
+     14 
+     15 # Initialize logger
+     16 logger = get_logger(__name__)
+
+  C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler\knowledge_ba
+  se\__init__.py:5 in <module>
+
+     2 Knowledge base module for Book Knowledge AI application.
+     3 """
+     4 
+  ❱  5 from knowledge_base.vector_store import VectorStore
+     6 from knowledge_base.chunking import chunk_document
+     7 from knowledge_base.embedding import get_embedding_function, get_embeddings
+     8 from knowledge_base.config import (
+
+  C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler\knowledge_ba
+  se\vector_store.py:11 in <module>
+
+      8 from typing import List, Dict, Any, Optional, Callable, Type, Union, Tuple
+      9 
+     10 from utils.logger import get_logger
+  ❱  11 from knowledge_base.embedding import get_embedding_function
+     12 from knowledge_base.chunking import chunk_document
+     13 from knowledge_base.vector_stores import get_vector_store, get_available_vecto
+     14 from knowledge_base.config import (
+
+  C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler\knowledge_ba
+  se\embedding.py:14 in <module>
+
+     11 from utils.logger import get_logger
+     12 from knowledge_base.config import DEFAULT_EMBEDDING_DIMENSION
+     13 from core.exceptions import EmbeddingError
+  ❱  14 from ai.utils import create_fallback_embedding as create_ai_fallback_embedding
+     15 
+     16 # Initialize logger
+     17 logger = get_logger(__name__)
+
+  C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler\ai\__init__.
+  py:8 in <module>
+
+     5 
+     6 from typing import Optional, Dict, Any
+     7 
+  ❱  8 from ai.client import AIClient
+     9 from ai.factory import AIClientFactory
+    10 from ai.models.common import Message, ModelInfo, EmbeddingVector
+    11 
+
+  C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler\ai\client.py
+  :8 in <module>
+
+      5 from abc import ABC, abstractmethod
+      6 from typing import Dict, List, Any, Optional, Union
+      7 
+  ❱   8 from ai.models.common import Message, ModelInfo, EmbeddingVector
+      9 
+     10 class AIClient(ABC):
+     11 │   """
+────────────────────────────────────────────────────────────────────────────────────────
+ModuleNotFoundError: No module named 'ai.models'
