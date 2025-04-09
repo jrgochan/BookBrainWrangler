@@ -1,0 +1,54 @@
+(base) PS C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler> scripts/run_bookbrainwrangler.ps1
+Starting BookBrainWrangler application with Streamlit...
+Project root: C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://0.0.0.0:5000
+
+INFO - Logger initialized
+2025-04-09 16:35:35 - book_knowledge_ai - INFO - Logger initialized
+INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 16:35:40 - knowledge_base.embedding - INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 16:35:40 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-04-09 16:35:40 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2      
+INFO - Document processor initialized
+2025-04-09 16:35:42 - document_processing.processor - INFO - Document processor initialized
+INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 16:35:42 - knowledge_base.embedding - INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 16:35:42 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-04-09 16:35:42 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2      
+2025-04-09 16:35:43 - faiss.loader - INFO - Loading faiss with AVX512 support.
+2025-04-09 16:35:43 - faiss.loader - INFO - Could not load library with AVX512 support due to:
+ModuleNotFoundError("No module named 'faiss.swigfaiss_avx512'")
+2025-04-09 16:35:43 - faiss.loader - INFO - Loading faiss with AVX2 support.
+2025-04-09 16:35:43 - faiss.loader - INFO - Successfully loaded faiss with AVX2 support.
+2025-04-09 16:35:43 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes.
+INFO - FAISS GPU support not available, using CPU version
+2025-04-09 16:35:43 - knowledge_base.vector_stores.faiss_store - INFO - FAISS GPU support not available, using CPU version
+Batches: 100%|███████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  9.95it/s]
+ERROR - Application error: 'FAISSVectorStore' object has no attribute 'gpu_enabled'
+2025-04-09 16:35:44 - __main__ - ERROR - Application error: 'FAISSVectorStore' object has no attribute 'gpu_enabled'
+2025-04-09 16:35:44.330 Examining the path of torch.classes raised:
+Traceback (most recent call last):
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamlit\web\bootstrap.py", line 347, in run   
+    if asyncio.get_running_loop().is_running():
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: no running event loop
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamlit\watcher\local_sources_watcher.py", line 217, in get_module_paths
+    potential_paths = extract_paths(module)
+                      ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamlit\watcher\local_sources_watcher.py", line 210, in <lambda>
+    lambda m: list(m.__path__._path),
+                   ^^^^^^^^^^^^^^^^
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\torch\_classes.py", line 13, in __getattr__     
+    proxy = torch._C._get_custom_class_python_wrapper(self.name, attr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Tried to instantiate class '__path__._path', but it does not exist! Ensure that it is registered via torch::class_   
