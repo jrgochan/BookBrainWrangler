@@ -55,8 +55,49 @@ class FAISSVectorStore(BaseVectorStore):
             embedding_function=embedding_function,
             distance_func=distance_func
         )
-        self.use_gpu = use_gpu and GPU_AVAILABLE
-        self.using_gpu = False  # Will be set to True if GPU is actually used
+        # Initialize with a protected attribute
+        self._use_gpu = use_gpu and GPU_AVAILABLE
+        self._using_gpu = False  # Will be set to True if GPU is actually used
+        
+    @property
+    def use_gpu(self) -> bool:
+        """
+        Get the use_gpu setting.
+        
+        Returns:
+            True if GPU use is enabled, False otherwise
+        """
+        return self._use_gpu
+        
+    @use_gpu.setter
+    def use_gpu(self, value: bool) -> None:
+        """
+        Set the use_gpu setting.
+        
+        Args:
+            value: New value for use_gpu
+        """
+        self._use_gpu = value and GPU_AVAILABLE
+        
+    @property
+    def using_gpu(self) -> bool:
+        """
+        Check if the vector store is actually using GPU acceleration.
+        
+        Returns:
+            True if GPU is being used, False otherwise
+        """
+        return self._using_gpu
+        
+    @using_gpu.setter
+    def using_gpu(self, value: bool) -> None:
+        """
+        Set the using_gpu flag.
+        
+        Args:
+            value: New value for using_gpu
+        """
+        self._using_gpu = value
     
     def _init_store(self):
         """Initialize the FAISS vector store."""

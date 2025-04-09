@@ -35,7 +35,8 @@ class VectorStore:
         data_path: str = DEFAULT_DATA_DIR,
         embedding_function: Optional[Callable] = None,
         distance_func: str = DEFAULT_DISTANCE_FUNC,
-        vector_store_type: str = DEFAULT_VECTOR_STORE
+        vector_store_type: str = DEFAULT_VECTOR_STORE,
+        use_gpu: bool = True
     ):
         """
         Initialize the vector store.
@@ -47,12 +48,15 @@ class VectorStore:
             embedding_function: Optional function to use for embeddings
             distance_func: Distance function to use ('cosine', 'l2', 'ip')
             vector_store_type: Type of vector store to use
+            use_gpu: Whether to use GPU acceleration for FAISS (if available)
         """
         self.collection_name = collection_name
         self.base_path = base_path
         self.data_path = data_path
         self.distance_func = distance_func
         self.vector_store_type = vector_store_type
+        # Store the GPU preference for later use in property accessors
+        self.gpu_enabled = use_gpu
         
         # Set embedding function
         if embedding_function is None:
@@ -60,14 +64,23 @@ class VectorStore:
         else:
             self.embedding_function = embedding_function
             
+        # Create kwargs for vector store initialization
+        kwargs = {
+            'collection_name': collection_name,
+            'base_path': base_path,
+            'data_path': data_path,
+            'embedding_function': self.embedding_function,
+            'distance_func': distance_func
+        }
+        
+        # Add use_gpu parameter for FAISS
+        if vector_store_type == 'faiss':
+            kwargs['use_gpu'] = use_gpu
+            
         # Create the underlying vector store
         self.vector_store = get_vector_store(
             store_type=vector_store_type,
-            collection_name=collection_name,
-            base_path=base_path,
-            data_path=data_path,
-            embedding_function=self.embedding_function,
-            distance_func=distance_func
+            **kwargs
         )
         
         logger.info(f"Vector store initialized with type '{vector_store_type}' and collection '{collection_name}'")
@@ -200,3 +213,29 @@ class VectorStore:
             True if successful
         """
         return self.vector_store.reset()
+        
+    @property
+    def using_gpu(self) -> bool:
+        """
+        Check if the vector store is using GPU acceleration.
+        
+        Returns:
+            True if using GPU, False otherwise
+        """
+        if hasattr(self.vector_store, 'using_gpu'):
+            return self.vector_store.using_gpu
+        return False
+        
+    @property
+    def use_gpu(self) -> bool:
+        """
+        Get the use_gpu setting.
+        
+        Returns:
+            True if GPU use is enabled, False otherwise
+        """
+        # First check if the underlying vector store has this property
+        if hasattr(self.vector_store, 'use_gpu'):
+            return self.vector_store.use_gpu
+        # Fall back to the stored attribute if the vector store doesn't have the property
+        return getattr(self, 'gpu_enabled', True)

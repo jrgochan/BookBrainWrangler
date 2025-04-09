@@ -388,3 +388,25 @@ class BaseVectorStore(ABC):
     def generate_id() -> str:
         """Generate a unique ID."""
         return str(uuid.uuid4())
+        
+    @property
+    def use_gpu(self) -> bool:
+        """
+        Get the use_gpu setting.
+        This property is implementation-specific - default is False.
+        
+        Returns:
+            True if GPU use is enabled, False otherwise
+        """
+        return False
+        
+    @property
+    def using_gpu(self) -> bool:
+        """
+        Check if the vector store is actually using GPU acceleration.
+        This property is implementation-specific - default is False.
+        
+        Returns:
+            True if GPU is being used, False otherwise
+        """
+        return False
