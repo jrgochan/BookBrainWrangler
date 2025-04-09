@@ -23,17 +23,25 @@ def render_knowledge_base_page(book_manager, knowledge_base):
             kb_settings = st.session_state.get('kb_settings', {})
             vector_store_type = kb_settings.get('vector_store_type', 'faiss')
             distance_func = kb_settings.get('distance_func', 'cosine')
+            use_gpu = kb_settings.get('use_gpu', True)
             
             # Create a new knowledge base with the selected vector store type
             # We'll use the same knowledge_base object but with a new vector_store
-            knowledge_base.vector_store = knowledge_base.vector_store.__class__(
-                collection_name=knowledge_base.vector_store.collection_name,
-                base_path=knowledge_base.vector_store.base_path,
-                data_path=knowledge_base.vector_store.data_path,
-                embedding_function=knowledge_base.vector_store.embedding_function,
-                distance_func=distance_func,
-                vector_store_type=vector_store_type
-            )
+            kwargs = {
+                'collection_name': knowledge_base.vector_store.collection_name,
+                'base_path': knowledge_base.vector_store.base_path,
+                'data_path': knowledge_base.vector_store.data_path,
+                'embedding_function': knowledge_base.vector_store.embedding_function,
+                'distance_func': distance_func
+            }
+            
+            # Add GPU setting if using FAISS
+            if vector_store_type == 'faiss':
+                kwargs['use_gpu'] = use_gpu
+                st.info(f"FAISS vector store initialized with GPU support: {'enabled' if use_gpu else 'disabled'}")
+            
+            # Create the vector store
+            knowledge_base.vector_store = knowledge_base.vector_store.__class__(**kwargs)
             
             # Get all books that should be indexed
             all_books = book_manager.get_all_books()
@@ -49,12 +57,16 @@ def render_knowledge_base_page(book_manager, knowledge_base):
     # Check for KB reset request
     if hasattr(st.session_state, 'reset_kb') and st.session_state.reset_kb:
         with st.spinner("Resetting knowledge base..."):
-            # Reset the vector store
-            knowledge_base.vector_store.reset()
+            # Get current GPU settings
+            kb_settings = st.session_state.get('kb_settings', {})
             
-            # Reset the flag
-            st.session_state.reset_kb = False
-            st.success("Knowledge base has been reset!")
+            # Reset the vector store - GPU settings will be applied within the reset method
+            if knowledge_base.vector_store.reset():
+                # Reset the flag
+                st.session_state.reset_kb = False
+                st.success("Knowledge base has been reset!")
+            else:
+                st.error("Failed to reset knowledge base. Check logs for details.")
     
     # Get all books and indexed books
     all_books = book_manager.get_all_books()
@@ -81,9 +93,17 @@ def render_knowledge_base_stats(knowledge_base):
     # Get the vector store type from session state or from the knowledge base
     kb_settings = st.session_state.get('kb_settings', {})
     vector_store_type = kb_settings.get('vector_store_type', 'faiss')
+    use_gpu = kb_settings.get('use_gpu', True)
     
     # Show vector store type
-    st.info(f"Vector Store: **{vector_store_type.upper()}**")
+    if vector_store_type == 'faiss':
+        gpu_status = ""
+        # Check if the vector store has GPU information
+        if hasattr(knowledge_base.vector_store, 'using_gpu'):
+            gpu_status = f" (GPU: {'Enabled' if knowledge_base.vector_store.using_gpu else 'Disabled'})"
+        st.info(f"Vector Store: **{vector_store_type.upper()}{gpu_status}**")
+    else:
+        st.info(f"Vector Store: **{vector_store_type.upper()}**")
     
     # Get vector store statistics
     try:

@@ -1,11 +1,12 @@
 """
 FAISS vector store implementation for Book Knowledge AI.
+Supports both CPU and GPU implementations based on availability.
 """
 
 import os
 import faiss
 import numpy as np
-from typing import List, Dict, Any, Optional, Callable, Tuple
+from typing import List, Dict, Any, Optional, Callable, Tuple, Union, Type
 import pickle
 
 from utils.logger import get_logger
@@ -13,6 +14,16 @@ from knowledge_base.vector_stores.base import BaseVectorStore
 from knowledge_base.vector_stores import register_vector_store
 
 logger = get_logger(__name__)
+
+# Check if GPU is available for FAISS
+try:
+    # Try to import GPU-specific modules
+    import faiss.GpuIndexIVFFlat
+    GPU_AVAILABLE = True
+    logger.info("FAISS GPU support detected")
+except (ImportError, AttributeError):
+    GPU_AVAILABLE = False
+    logger.info("FAISS GPU support not available, using CPU version")
 
 class FAISSVectorStore(BaseVectorStore):
     """Vector store with FAISS."""
@@ -23,7 +34,8 @@ class FAISSVectorStore(BaseVectorStore):
         base_path: str = "./knowledge_base_data/vectors",
         data_path: str = "./knowledge_base_data/knowledge_base_data",
         embedding_function: Optional[Callable] = None,
-        distance_func: str = "cosine"
+        distance_func: str = "cosine",
+        use_gpu: bool = True
     ):
         """
         Initialize the FAISS vector store.
@@ -34,6 +46,7 @@ class FAISSVectorStore(BaseVectorStore):
             data_path: Path to store document data
             embedding_function: Function to create embeddings
             distance_func: Distance function ('cosine', 'l2', 'ip')
+            use_gpu: Whether to use GPU acceleration if available
         """
         super().__init__(
             collection_name=collection_name,
@@ -42,6 +55,7 @@ class FAISSVectorStore(BaseVectorStore):
             embedding_function=embedding_function,
             distance_func=distance_func
         )
+        self.use_gpu = use_gpu and GPU_AVAILABLE
     
     def _init_store(self):
         """Initialize the FAISS vector store."""
@@ -74,13 +88,47 @@ class FAISSVectorStore(BaseVectorStore):
                 "ids": []
             }
         
-        logger.info(f"FAISS index initialized with dimension {self.embedding_dim}")
+        # Move index to GPU if available and enabled
+        if self.use_gpu:
+            try:
+                # Try to use GPU
+                gpu_resources = faiss.StandardGpuResources()
+                config = faiss.GpuIndexFlatConfig()
+                config.device = 0  # Use first GPU
+                config.useFloat16 = True  # Use half-precision for better performance
+                
+                if isinstance(self.index, faiss.IndexFlatIP):
+                    self.index = faiss.index_cpu_to_gpu(gpu_resources, 0, self.index)
+                    logger.info("FAISS index moved to GPU with IP metric")
+                elif isinstance(self.index, faiss.IndexFlatL2):
+                    self.index = faiss.index_cpu_to_gpu(gpu_resources, 0, self.index)
+                    logger.info("FAISS index moved to GPU with L2 metric")
+                else:
+                    # Try generic conversion
+                    self.index = faiss.index_cpu_to_gpu(gpu_resources, 0, self.index)
+                    logger.info(f"FAISS index of type {type(self.index).__name__} moved to GPU")
+                
+                # Store GPU resources reference
+                self.gpu_resources = gpu_resources
+                self.using_gpu = True
+            except Exception as e:
+                logger.warning(f"Failed to move FAISS index to GPU: {str(e)}")
+                self.using_gpu = False
+        else:
+            self.using_gpu = False
+            
+        logger.info(f"FAISS index initialized with dimension {self.embedding_dim} (GPU: {self.using_gpu})")
     
     def _save_index(self):
         """Save FAISS index and metadata to disk."""
         try:
-            # Save index
-            faiss.write_index(self.index, self.index_path)
+            # Convert GPU index to CPU for saving if using GPU
+            if hasattr(self, 'using_gpu') and self.using_gpu:
+                cpu_index = faiss.index_gpu_to_cpu(self.index)
+                faiss.write_index(cpu_index, self.index_path)
+                logger.debug("Converted GPU index to CPU for saving")
+            else:
+                faiss.write_index(self.index, self.index_path)
             
             # Save metadata
             with open(self.metadata_path, 'wb') as f:
@@ -316,10 +364,10 @@ class FAISSVectorStore(BaseVectorStore):
         
         # If no documents left, just reset the index
         if not keep_docs:
-            self.index = new_index
+            # Reset using the reset method which handles GPU properly
             self.metadata = new_metadata
             self._save_index()
-            return True
+            return self.reset()
         
         # Otherwise, add the kept vectors to the new index
         kept_embeddings = []
@@ -337,8 +385,27 @@ class FAISSVectorStore(BaseVectorStore):
         # Add vectors to the new index
         new_index.add(embeddings_array)
         
-        # Update index and metadata
-        self.index = new_index
+        # Move to GPU if needed
+        if hasattr(self, 'using_gpu') and self.using_gpu:
+            try:
+                gpu_resources = faiss.StandardGpuResources()
+                config = faiss.GpuIndexFlatConfig()
+                config.device = 0  # Use first GPU
+                config.useFloat16 = True
+                
+                gpu_index = faiss.index_cpu_to_gpu(gpu_resources, 0, new_index)
+                # Store GPU resources reference
+                self.gpu_resources = gpu_resources
+                self.index = gpu_index
+                logger.info("New FAISS index after delete moved to GPU")
+            except Exception as e:
+                logger.warning(f"Failed to move index to GPU after delete, falling back to CPU: {str(e)}")
+                self.index = new_index
+                self.using_gpu = False
+        else:
+            self.index = new_index
+            
+        # Update metadata
         self.metadata = new_metadata
         
         # Save changes
@@ -356,9 +423,35 @@ class FAISSVectorStore(BaseVectorStore):
         try:
             # Create new index
             if self.distance_func == "cosine" or self.distance_func == "ip":
-                self.index = faiss.IndexFlatIP(self.embedding_dim)
+                new_index = faiss.IndexFlatIP(self.embedding_dim)
             else:
-                self.index = faiss.IndexFlatL2(self.embedding_dim)
+                new_index = faiss.IndexFlatL2(self.embedding_dim)
+            
+            # Move to GPU if using GPU
+            if hasattr(self, 'using_gpu') and self.using_gpu:
+                try:
+                    gpu_resources = faiss.StandardGpuResources()
+                    config = faiss.GpuIndexFlatConfig()
+                    config.device = 0  # Use first GPU
+                    config.useFloat16 = True
+                    
+                    if self.distance_func == "cosine" or self.distance_func == "ip":
+                        self.index = faiss.index_cpu_to_gpu(gpu_resources, 0, new_index)
+                        logger.info("New FAISS index moved to GPU with IP metric")
+                    else:
+                        self.index = faiss.index_cpu_to_gpu(gpu_resources, 0, new_index)
+                        logger.info("New FAISS index moved to GPU with L2 metric")
+                    
+                    # Store GPU resources reference
+                    self.gpu_resources = gpu_resources
+                    self.using_gpu = True
+                except Exception as e:
+                    logger.warning(f"Failed to move reset index to GPU, falling back to CPU: {str(e)}")
+                    self.index = new_index
+                    self.using_gpu = False
+            else:
+                self.index = new_index
+                self.using_gpu = False
             
             # Reset metadata
             self.metadata = {
@@ -370,7 +463,7 @@ class FAISSVectorStore(BaseVectorStore):
             # Save changes
             self._save_index()
             
-            logger.info("FAISS vector store reset")
+            logger.info(f"FAISS vector store reset (GPU: {self.using_gpu})")
             return True
             
         except Exception as e:

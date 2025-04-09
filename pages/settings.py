@@ -309,7 +309,8 @@ def render_knowledge_base_settings():
             'vector_store_type': DEFAULT_VECTOR_STORE,
             'chunk_size': 500,
             'chunk_overlap': 50,
-            'distance_func': 'cosine'
+            'distance_func': 'cosine',
+            'use_gpu': True
         }
     
     current_settings = st.session_state.kb_settings
@@ -340,6 +341,24 @@ def render_knowledge_base_settings():
             index=VECTOR_STORE_OPTIONS.index(current_settings.get('vector_store_type', DEFAULT_VECTOR_STORE)),
             help="Select which vector store engine to use for the knowledge base"
         )
+        
+        # GPU settings for FAISS
+        if vector_store_type == 'faiss':
+            st.subheader("FAISS GPU Acceleration")
+            use_gpu = st.toggle(
+                "Use GPU acceleration (if available)",
+                value=current_settings.get('use_gpu', True),
+                help="Enable GPU acceleration for FAISS vector store. Only applies when running locally with CUDA-compatible GPU."
+            )
+            
+            # Display notice about GPU acceleration
+            if use_gpu:
+                st.info(
+                    "GPU acceleration will be used if a compatible GPU is available. "
+                    "This setting has no effect if run in environments without a GPU."
+                )
+        else:
+            use_gpu = current_settings.get('use_gpu', True)
         
         # Distance function
         distance_options = {
@@ -393,7 +412,8 @@ def render_knowledge_base_settings():
                 'vector_store_type': vector_store_type,
                 'chunk_size': chunk_size,
                 'chunk_overlap': chunk_overlap,
-                'distance_func': distance_func
+                'distance_func': distance_func,
+                'use_gpu': use_gpu
             })
             
             st.session_state.kb_settings = new_settings
