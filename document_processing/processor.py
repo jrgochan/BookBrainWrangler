@@ -324,3 +324,31 @@ class DocumentProcessor:
             error_msg = f"Error saving uploaded file: {str(e)}"
             logger.error(error_msg)
             raise DocumentProcessingError(error_msg) from e
+            
+    def process_document(
+        self,
+        file_path: str,
+        include_images: bool = True,
+        ocr_enabled: bool = False,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Process a document file and extract its content.
+        This is an alias for process_file to maintain backward compatibility.
+        
+        Args:
+            file_path: Path to the document file
+            include_images: Whether to extract images
+            ocr_enabled: Whether to use OCR for image-based documents
+            progress_callback: Optional callback function for progress updates
+            
+        Returns:
+            A dictionary with extracted content
+        """
+        # Just call process_file with the same parameters
+        return self.process_file(
+            file_path,
+            extract_images=include_images,
+            ocr_enabled=ocr_enabled,
+            progress_callback=progress_callback
+        )
