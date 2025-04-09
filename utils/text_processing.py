@@ -286,3 +286,76 @@ def analyze_word_frequency(text: str, min_word_length: int = 3,
     
     # Limit to max_words
     return freq_list[:max_words]
+
+def chunk_large_text(text: str, max_chunk_size: int = 4000) -> List[str]:
+    """
+    Split very large text into manageable chunks for processing.
+    
+    Args:
+        text: The large text to chunk
+        max_chunk_size: Maximum size per chunk
+        
+    Returns:
+        List of text chunks
+    """
+    if not text:
+        return []
+        
+    chunks = []
+    
+    # Try to split at paragraph boundaries
+    paragraphs = text.split('\n\n')
+    current_chunk = ""
+    
+    for para in paragraphs:
+        if len(current_chunk) + len(para) <= max_chunk_size:
+            current_chunk += para + "\n\n"
+        else:
+            # If the current chunk has content, add it to chunks
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            
+            # Start a new chunk
+            current_chunk = para + "\n\n"
+    
+    # Add the last chunk if it has content
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    # If any chunk is still too large, use a more aggressive splitting
+    result = []
+    for chunk in chunks:
+        if len(chunk) <= max_chunk_size:
+            result.append(chunk)
+        else:
+            # Split at sentence boundaries
+            sentences = re.split(r'(?<=[.!?])\s+', chunk)
+            current_chunk = ""
+            
+            for sentence in sentences:
+                if len(current_chunk) + len(sentence) <= max_chunk_size:
+                    current_chunk += sentence + " "
+                else:
+                    # Add the current chunk if it has content
+                    if current_chunk:
+                        result.append(current_chunk.strip())
+                    
+                    # If a single sentence is too long, split it by words
+                    if len(sentence) > max_chunk_size:
+                        words = sentence.split()
+                        current_chunk = ""
+                        
+                        for word in words:
+                            if len(current_chunk) + len(word) <= max_chunk_size:
+                                current_chunk += word + " "
+                            else:
+                                result.append(current_chunk.strip())
+                                current_chunk = word + " "
+                    else:
+                        current_chunk = sentence + " "
+            
+            # Add the last part if it has content
+            if current_chunk:
+                result.append(current_chunk.strip())
+    
+    return result

@@ -190,3 +190,37 @@ def extract_metadata(content: Optional[str], patterns: Optional[Dict[str, List[s
         metadata['source_file'] = os.path.basename(file_path)
     
     return metadata
+
+def extract_metadata_from_pdf(pdf_path: str) -> Dict[str, Any]:
+    """
+    Extract metadata from a PDF file.
+    
+    Args:
+        pdf_path: Path to the PDF file
+        
+    Returns:
+        Dictionary with metadata fields
+    """
+    try:
+        import PyPDF2
+        
+        with open(pdf_path, 'rb') as file:
+            reader = PyPDF2.PdfReader(file)
+            info = reader.metadata
+            
+            if info:
+                metadata = {
+                    'title': info.get('/Title', ''),
+                    'author': info.get('/Author', ''),
+                    'subject': info.get('/Subject', ''),
+                    'creator': info.get('/Creator', ''),
+                    'producer': info.get('/Producer', ''),
+                    'creation_date': info.get('/CreationDate', '')
+                }
+                return {k: v for k, v in metadata.items() if v}
+            
+        return {}
+            
+    except Exception as e:
+        logger.error(f"Error extracting metadata: {e}")
+        return {}
