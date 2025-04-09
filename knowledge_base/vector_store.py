@@ -1,99 +1,31 @@
 """
-Vector store module for Book Knowledge AI.
-Provides vector database functionality for the knowledge base.
+Vector store implementation for knowledge base.
+This module is maintained for backward compatibility.
+New code should use the vector_stores module.
 """
 
 import os
-import json
-import uuid
-from typing import List, Dict, Any, Optional, Union, Callable, Tuple
+from typing import List, Dict, Any, Optional, Callable, Type, Union, Tuple
 
 from utils.logger import get_logger
-from core.exceptions import VectorStoreError, EmbeddingError
-from knowledge_base.config import (
-    DEFAULT_VECTOR_DIR, DEFAULT_DATA_DIR, DEFAULT_COLLECTION_NAME,
-    DEFAULT_DISTANCE_FUNC, DEFAULT_EMBEDDING_DIMENSION
-)
-from knowledge_base.utils import (
-    generate_id, 
-    save_document_to_disk, 
-    load_document_from_disk,
-    delete_document_from_disk,
-    list_documents_on_disk,
-    clean_knowledge_base
-)
-from knowledge_base.embedding import (
-    get_embedding_function,
-    get_embeddings,
-    default_embedding_function,
-    safe_get_embeddings
-)
+from knowledge_base.embedding import get_embedding_function
 from knowledge_base.chunking import chunk_document
+from knowledge_base.vector_stores import get_vector_store, get_available_vector_stores
+from knowledge_base.config import (
+    DEFAULT_COLLECTION_NAME,
+    DEFAULT_VECTOR_DIR,
+    DEFAULT_DATA_DIR,
+    DEFAULT_DISTANCE_FUNC,
+    DEFAULT_VECTOR_STORE
+)
 
-# Try to import chromadb
-try:
-    import chromadb
-    from chromadb.config import Settings
-    from chromadb.utils import embedding_functions
-    CHROMADB_AVAILABLE = True
-except ImportError:
-    CHROMADB_AVAILABLE = False
-
-# Initialize logger
 logger = get_logger(__name__)
 
-class ChromaEmbeddingFunction(embedding_functions.EmbeddingFunction):
+class VectorStore:
     """
-    Wrapper class to adapt our embedding functions to ChromaDB's expected interface.
-    ChromaDB expects embedding functions to have a specific signature.
-    """
-    
-    def __init__(self, embedding_func: Callable):
-        """
-        Initialize with our embedding function.
-        
-        Args:
-            embedding_func: The function to wrap
-        """
-        self.embedding_func = embedding_func
-    
-    def __call__(self, input: List[str]) -> List[List[float]]:
-        """
-        Generate embeddings for a list of texts.
-        
-        Args:
-            input: List of texts to embed
-            
-        Returns:
-            List of embedding vectors
-        """
-        # Handle empty input
-        if not input:
-            return []
-        
-        try:
-            # If input is a single string, convert to list
-            if isinstance(input, str):
-                input = [input]
-            
-            # Generate embeddings using our function
-            embeddings = safe_get_embeddings(input)
-            
-            # Ensure result is a list of lists
-            if not isinstance(embeddings[0], list):
-                embeddings = [embeddings]
-                
-            return embeddings
-            
-        except Exception as e:
-            logger.error(f"Error in ChromaEmbeddingFunction: {str(e)}")
-            # Return zero vectors as a fallback
-            return [[0.0] * DEFAULT_EMBEDDING_DIMENSION for _ in input]
-
-class KnowledgeBase:
-    """
-    Knowledge base with vector search capabilities.
-    Uses ChromaDB if available, otherwise falls back to a simpler implementation.
+    Vector store for the knowledge base.
+    This class provides backward compatibility with the old vector store API.
+    It delegates to the new vector store implementations.
     """
     
     def __init__(
@@ -102,86 +34,43 @@ class KnowledgeBase:
         base_path: str = DEFAULT_VECTOR_DIR,
         data_path: str = DEFAULT_DATA_DIR,
         embedding_function: Optional[Callable] = None,
-        distance_func: str = DEFAULT_DISTANCE_FUNC
+        distance_func: str = DEFAULT_DISTANCE_FUNC,
+        vector_store_type: str = DEFAULT_VECTOR_STORE
     ):
         """
-        Initialize the knowledge base.
+        Initialize the vector store.
         
         Args:
             collection_name: Name of the collection
-            base_path: Path to store vector database
+            base_path: Path to store vector database files
             data_path: Path to store document data
-            embedding_function: Function to create embeddings
-            distance_func: Distance function ('cosine', 'l2', 'ip')
+            embedding_function: Optional function to use for embeddings
+            distance_func: Distance function to use ('cosine', 'l2', 'ip')
+            vector_store_type: Type of vector store to use
         """
         self.collection_name = collection_name
         self.base_path = base_path
         self.data_path = data_path
         self.distance_func = distance_func
-        
-        # Create directories if they don't exist
-        os.makedirs(self.base_path, exist_ok=True)
-        os.makedirs(self.data_path, exist_ok=True)
+        self.vector_store_type = vector_store_type
         
         # Set embedding function
-        self.raw_embedding_function = embedding_function or default_embedding_function
-        
-        # For ChromaDB, we need to wrap the embedding function
-        if CHROMADB_AVAILABLE:
-            # Create a wrapper for the embedding function that follows ChromaDB's interface
-            self.embedding_function = ChromaEmbeddingFunction(self.raw_embedding_function)
+        if embedding_function is None:
+            self.embedding_function = get_embedding_function()
         else:
-            self.embedding_function = self.raw_embedding_function
-        
-        # Initialize vector store
-        self._init_vector_store()
-        
-        logger.info(f"Knowledge base initialized with collection '{collection_name}'")
-    
-    def _init_vector_store(self):
-        """Initialize the vector store."""
-        if CHROMADB_AVAILABLE:
-            self._init_chromadb()
-        else:
-            self._init_simple_store()
-    
-    def _init_chromadb(self):
-        """Initialize ChromaDB."""
-        try:
-            # Configure persistent client
-            self.client = chromadb.PersistentClient(
-                path=self.base_path,
-                settings=Settings(
-                    anonymized_telemetry=False
-                )
-            )
+            self.embedding_function = embedding_function
             
-            # Get or create collection
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": self.distance_func},
-                embedding_function=self.embedding_function
-            )
-            
-            logger.info(f"ChromaDB collection '{self.collection_name}' initialized")
+        # Create the underlying vector store
+        self.vector_store = get_vector_store(
+            store_type=vector_store_type,
+            collection_name=collection_name,
+            base_path=base_path,
+            data_path=data_path,
+            embedding_function=self.embedding_function,
+            distance_func=distance_func
+        )
         
-        except Exception as e:
-            logger.error(f"Error initializing ChromaDB: {str(e)}")
-            # Fall back to simple store
-            self._init_simple_store()
-    
-    def _init_simple_store(self):
-        """Initialize simple vector store."""
-        logger.warning("ChromaDB not available, using simple in-memory store")
-        
-        # Create a simple in-memory collection
-        self.client = None
-        self.collection = {
-            "documents": [],
-            "embeddings": [],
-            "metadatas": [],
-            "ids": []
-        }
+        logger.info(f"Vector store initialized with type '{vector_store_type}' and collection '{collection_name}'")
     
     def add_document(
         self,
@@ -192,7 +81,7 @@ class KnowledgeBase:
         chunk_overlap: Optional[int] = None
     ) -> str:
         """
-        Add a document to the knowledge base.
+        Add a document to the vector store.
         
         Args:
             document_id: Document ID
@@ -204,72 +93,13 @@ class KnowledgeBase:
         Returns:
             Document ID
         """
-        try:
-            if not text:
-                logger.warning("Empty document text, not adding to knowledge base")
-                return document_id
-            
-            # Create document
-            document = {
-                "id": document_id,
-                "text": text,
-                "metadata": metadata or {}
-            }
-            
-            # Save document to disk
-            save_document_to_disk(document, self.data_path)
-            
-            # Chunk document
-            chunks = chunk_document(document, chunk_size, chunk_overlap)
-            
-            # Add chunks to vector store
-            self._add_chunks(chunks)
-            
-            logger.info(f"Added document '{document_id}' to knowledge base")
-            return document_id
-            
-        except Exception as e:
-            logger.error(f"Error adding document to knowledge base: {str(e)}")
-            raise VectorStoreError(f"Failed to add document: {str(e)}")
-    
-    def _add_chunks(self, chunks: List[Dict[str, Any]]):
-        """
-        Add chunks to the vector store.
-        
-        Args:
-            chunks: Document chunks to add
-        """
-        if not chunks:
-            return
-        
-        try:
-            # Extract data
-            ids = [chunk["id"] for chunk in chunks]
-            texts = [chunk["text"] for chunk in chunks]
-            metadatas = [chunk["metadata"] for chunk in chunks]
-            
-            if CHROMADB_AVAILABLE:
-                # Add to ChromaDB
-                self.collection.add(
-                    documents=texts,
-                    metadatas=metadatas,
-                    ids=ids
-                )
-            else:
-                # Add to simple store
-                embeddings = [get_embeddings(text) for text in texts]
-                
-                # Extend the lists
-                self.collection["documents"].extend(texts)
-                self.collection["embeddings"].extend(embeddings)
-                self.collection["metadatas"].extend(metadatas)
-                self.collection["ids"].extend(ids)
-                
-            logger.info(f"Added {len(chunks)} chunks to vector store")
-                
-        except Exception as e:
-            logger.error(f"Error adding chunks to vector store: {str(e)}")
-            raise VectorStoreError(f"Failed to add chunks: {str(e)}")
+        return self.vector_store.add_document(
+            document_id=document_id,
+            text=text,
+            metadata=metadata,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
     
     def search(
         self,
@@ -278,7 +108,7 @@ class KnowledgeBase:
         where: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Search the knowledge base.
+        Search the vector store.
         
         Args:
             query: Search query
@@ -288,120 +118,15 @@ class KnowledgeBase:
         Returns:
             List of search results
         """
-        try:
-            if not query:
-                return []
-            
-            if CHROMADB_AVAILABLE:
-                # Search ChromaDB
-                results = self.collection.query(
-                    query_texts=[query],
-                    n_results=limit,
-                    where=where
-                )
-                
-                # Format results
-                formatted_results = []
-                
-                if results and "documents" in results and results["documents"]:
-                    for i, doc in enumerate(results["documents"][0]):
-                        if i < len(results["ids"][0]) and i < len(results["metadatas"][0]) and i < len(results["distances"][0]):
-                            result = {
-                                "id": results["ids"][0][i],
-                                "text": doc,
-                                "metadata": results["metadatas"][0][i],
-                                "score": 1.0 - min(results["distances"][0][i], 1.0)  # Convert distance to score
-                            }
-                            formatted_results.append(result)
-                
-                return formatted_results
-                
-            else:
-                # Search simple store
-                if not self.collection["documents"]:
-                    return []
-                
-                # Get embedding for query
-                query_embedding = get_embeddings(query)
-                
-                # Calculate scores
-                scores = []
-                for i, doc_embedding in enumerate(self.collection["embeddings"]):
-                    # Filter by metadata if where is provided
-                    if where and not self._matches_filter(self.collection["metadatas"][i], where):
-                        continue
-                    
-                    # Calculate cosine similarity
-                    similarity = self._cosine_similarity(query_embedding, doc_embedding)
-                    scores.append((i, similarity))
-                
-                # Sort by score
-                scores.sort(key=lambda x: x[1], reverse=True)
-                
-                # Format results
-                formatted_results = []
-                for i, score in scores[:limit]:
-                    result = {
-                        "id": self.collection["ids"][i],
-                        "text": self.collection["documents"][i],
-                        "metadata": self.collection["metadatas"][i],
-                        "score": score
-                    }
-                    formatted_results.append(result)
-                
-                return formatted_results
-                
-        except Exception as e:
-            logger.error(f"Error searching knowledge base: {str(e)}")
-            return []
-    
-    def _cosine_similarity(self, v1, v2) -> float:
-        """
-        Calculate cosine similarity between two vectors.
-        
-        Args:
-            v1: First vector
-            v2: Second vector
-            
-        Returns:
-            Cosine similarity (0-1)
-        """
-        import numpy as np
-        
-        v1 = np.array(v1)
-        v2 = np.array(v2)
-        
-        dot_product = np.dot(v1, v2)
-        norm_v1 = np.linalg.norm(v1)
-        norm_v2 = np.linalg.norm(v2)
-        
-        if norm_v1 == 0 or norm_v2 == 0:
-            return 0.0
-        
-        cos_sim = dot_product / (norm_v1 * norm_v2)
-        
-        # Ensure result is between 0 and 1
-        return max(0.0, min(cos_sim, 1.0))
-    
-    def _matches_filter(self, metadata: Dict[str, Any], filter_dict: Dict[str, Any]) -> bool:
-        """
-        Check if metadata matches filter.
-        
-        Args:
-            metadata: Metadata to check
-            filter_dict: Filter dictionary
-            
-        Returns:
-            True if metadata matches filter
-        """
-        for key, value in filter_dict.items():
-            if key not in metadata or metadata[key] != value:
-                return False
-        return True
+        return self.vector_store.search(
+            query=query,
+            limit=limit,
+            where=where
+        )
     
     def get_document(self, document_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get a document from the knowledge base.
+        Get a document from the vector store.
         
         Args:
             document_id: Document ID
@@ -409,41 +134,11 @@ class KnowledgeBase:
         Returns:
             Document or None if not found
         """
-        try:
-            # Load document from disk
-            document = load_document_from_disk(document_id, self.data_path)
-            
-            if not document:
-                return None
-            
-            # Get chunks for this document
-            if CHROMADB_AVAILABLE:
-                # Use where filter in get method
-                where_filter = {"document_id": document_id}
-                chunks = self.collection.get(
-                    where=where_filter
-                )
-                
-                if chunks and "documents" in chunks and chunks["documents"]:
-                    document["chunks"] = chunks["documents"]
-            else:
-                # Search in simple store
-                chunks = []
-                for i, metadata in enumerate(self.collection["metadatas"]):
-                    if metadata.get("document_id") == document_id:
-                        chunks.append(self.collection["documents"][i])
-                
-                document["chunks"] = chunks
-            
-            return document
-            
-        except Exception as e:
-            logger.error(f"Error getting document '{document_id}': {str(e)}")
-            return None
+        return self.vector_store.get_document(document_id)
     
     def delete_document(self, document_id: str) -> bool:
         """
-        Delete a document from the knowledge base.
+        Delete a document from the vector store.
         
         Args:
             document_id: Document ID
@@ -451,143 +146,57 @@ class KnowledgeBase:
         Returns:
             True if deleted, False otherwise
         """
-        try:
-            # Delete chunks from vector store
-            if CHROMADB_AVAILABLE:
-                self.collection.delete(
-                    where={"document_id": document_id}
-                )
-            else:
-                # Find chunks to delete in simple store
-                to_delete = []
-                for i, metadata in enumerate(self.collection["metadatas"]):
-                    if metadata.get("document_id") == document_id:
-                        to_delete.append(i)
-                
-                # Delete in reverse order to avoid index issues
-                for i in sorted(to_delete, reverse=True):
-                    self.collection["documents"].pop(i)
-                    self.collection["embeddings"].pop(i)
-                    self.collection["metadatas"].pop(i)
-                    self.collection["ids"].pop(i)
-            
-            # Delete from disk
-            deleted = delete_document_from_disk(document_id, self.data_path)
-            
-            logger.info(f"Deleted document '{document_id}' from knowledge base")
-            return deleted
-            
-        except Exception as e:
-            logger.error(f"Error deleting document '{document_id}': {str(e)}")
-            return False
+        return self.vector_store.delete_document(document_id)
     
     def list_documents(self) -> List[Dict[str, Any]]:
         """
-        List all documents in the knowledge base.
+        List all documents in the vector store.
         
         Returns:
             List of documents
         """
-        try:
-            # Get documents from disk
-            return list_documents_on_disk(self.data_path)
-            
-        except Exception as e:
-            logger.error(f"Error listing documents: {str(e)}")
-            return []
+        return self.vector_store.list_documents()
     
-    def reset(self) -> bool:
+    def get(
+        self,
+        ids: Optional[List[str]] = None,
+        where: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
-        Reset the knowledge base.
+        Get entries from the vector store.
         
+        Args:
+            ids: List of IDs to get
+            where: Filter condition
+            
         Returns:
-            True if reset, False otherwise
+            Dictionary with documents, metadatas, and ids
         """
-        try:
-            # Reset vector store
-            if CHROMADB_AVAILABLE:
-                try:
-                    self.client.delete_collection(self.collection_name)
-                except Exception:
-                    pass
-                
-                # Re-create collection
-                self.collection = self.client.get_or_create_collection(
-                    name=self.collection_name,
-                    metadata={"hnsw:space": self.distance_func},
-                    embedding_function=self.embedding_function
-                )
-            else:
-                # Reset simple store
-                self.collection = {
-                    "documents": [],
-                    "embeddings": [],
-                    "metadatas": [],
-                    "ids": []
-                }
-            
-            # Clean files
-            clean_knowledge_base(
-                kb_dir=self.base_path,
-                vector_dir=self.base_path,
-                data_dir=self.data_path
-            )
-            
-            logger.info("Knowledge base reset")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error resetting knowledge base: {str(e)}")
-            return False
+        return self.vector_store.get(ids=ids, where=where)
     
     def get_stats(self) -> Dict[str, Any]:
         """
-        Get knowledge base statistics.
+        Get vector store statistics.
         
         Returns:
             Dictionary of statistics
         """
-        try:
-            stats = {}
-            
-            # Count documents
-            documents = self.list_documents()
-            stats["document_count"] = len(documents)
-            
-            # Count chunks
-            if CHROMADB_AVAILABLE:
-                try:
-                    # ChromaDB's count method returns the number of entries in the collection
-                    chunk_count = self.collection.count()
-                except AttributeError:
-                    # Fall back to get() method if count() is not available
-                    try:
-                        # Get all ids without filtering
-                        results = self.collection.get(include=["ids"])
-                        chunk_count = len(results["ids"]) if "ids" in results else 0
-                    except Exception as e:
-                        logger.error(f"Error getting chunk count from ChromaDB: {str(e)}")
-                        chunk_count = 0
-            else:
-                # For simple store, just count the number of documents
-                chunk_count = len(self.collection["documents"]) if "documents" in self.collection else 0
-            
-            stats["chunk_count"] = chunk_count
-            
-            return stats
-            
-        except Exception as e:
-            logger.error(f"Error getting knowledge base stats: {str(e)}")
-            return {
-                "document_count": 0,
-                "chunk_count": 0
-            }
+        return self.vector_store.get_stats()
     
-    def generate_id(self) -> str:
+    def count(self) -> int:
         """
-        Generate a unique document ID.
+        Get the number of entries in the vector store.
         
         Returns:
-            Unique ID
+            Number of entries
         """
-        return generate_id()
+        return self.vector_store.count()
+    
+    def reset(self) -> bool:
+        """
+        Reset the vector store.
+        
+        Returns:
+            True if successful
+        """
+        return self.vector_store.reset()

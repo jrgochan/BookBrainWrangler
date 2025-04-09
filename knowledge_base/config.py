@@ -1,64 +1,39 @@
 """
-Configuration module for Knowledge Base.
-Contains default settings for knowledge base operations.
+Configuration for the knowledge base.
 """
 
 import os
-from typing import Dict, Any
 
-# Directory paths
-DEFAULT_KB_DIR = os.environ.get("KB_DIR", "knowledge_base_data")
-DEFAULT_VECTOR_DIR = os.path.join(DEFAULT_KB_DIR, "vectors")
-DEFAULT_DATA_DIR = os.path.join(DEFAULT_KB_DIR, "knowledge_base_data")
-
-# Collection settings
+# Default vector store settings
 DEFAULT_COLLECTION_NAME = "book_knowledge"
+DEFAULT_VECTOR_DIR = "./knowledge_base_data/vectors"
+DEFAULT_DATA_DIR = "./knowledge_base_data/knowledge_base_data"
 DEFAULT_DISTANCE_FUNC = "cosine"
+DEFAULT_VECTOR_STORE = "faiss"
+
+# Vector store options
+VECTOR_STORE_OPTIONS = ["faiss", "chromadb", "annoy", "simple"]
 
 # Embedding settings
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-DEFAULT_EMBEDDING_DIMENSION = 384
+DEFAULT_EMBEDDING_DIMENSION = 384  # Default embedding dimension
+DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Default sentence-transformers model
 
 # Chunking settings
-DEFAULT_CHUNK_SIZE = 1000
-DEFAULT_CHUNK_OVERLAP = 200
-DEFAULT_SPLIT_BY = "paragraph"
+DEFAULT_CHUNK_SIZE = 500
+DEFAULT_CHUNK_OVERLAP = 50
 
 # Search settings
 DEFAULT_SEARCH_LIMIT = 5
-DEFAULT_SEARCH_THRESHOLD = 0.6
+DEFAULT_SEARCH_THRESHOLD = 0.2
 
 # Analytics settings
 DEFAULT_KEYWORD_MIN_COUNT = 2
-DEFAULT_KEYWORD_MAX_WORDS = 3
+DEFAULT_KEYWORD_MAX_WORDS = 100
 DEFAULT_STOPWORDS_LANGUAGE = "english"
 
-# Create required directories
-os.makedirs(DEFAULT_KB_DIR, exist_ok=True)
+# Splitting settings
+DEFAULT_SPLIT_BY = "paragraph"
+
+# Create directories if they don't exist
 os.makedirs(DEFAULT_VECTOR_DIR, exist_ok=True)
 os.makedirs(DEFAULT_DATA_DIR, exist_ok=True)
-
-def get_default_config() -> Dict[str, Any]:
-    """
-    Get default knowledge base configuration.
-    
-    Returns:
-        Dictionary with default configuration
-    """
-    return {
-        "kb_dir": DEFAULT_KB_DIR,
-        "vector_dir": DEFAULT_VECTOR_DIR,
-        "data_dir": DEFAULT_DATA_DIR,
-        "collection_name": DEFAULT_COLLECTION_NAME,
-        "distance_func": DEFAULT_DISTANCE_FUNC,
-        "embedding_model": DEFAULT_EMBEDDING_MODEL,
-        "embedding_dimension": DEFAULT_EMBEDDING_DIMENSION,
-        "chunk_size": DEFAULT_CHUNK_SIZE,
-        "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
-        "split_by": DEFAULT_SPLIT_BY,
-        "search_limit": DEFAULT_SEARCH_LIMIT,
-        "search_threshold": DEFAULT_SEARCH_THRESHOLD,
-        "keyword_min_count": DEFAULT_KEYWORD_MIN_COUNT,
-        "keyword_max_words": DEFAULT_KEYWORD_MAX_WORDS,
-        "stopwords_language": DEFAULT_STOPWORDS_LANGUAGE
-    }

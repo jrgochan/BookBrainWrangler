@@ -6,6 +6,8 @@ import streamlit as st
 import os
 from typing import Dict, List, Any, Tuple
 
+from knowledge_base.config import VECTOR_STORE_OPTIONS, DEFAULT_VECTOR_STORE
+
 def render_settings_page(ollama_client):
     """
     Render the Settings page.
@@ -16,15 +18,18 @@ def render_settings_page(ollama_client):
     st.title("Book Knowledge AI Settings")
     
     # Tabs for different settings
-    tab1, tab2, tab3 = st.tabs(["AI Settings", "OCR Settings", "Display Settings"])
+    tab1, tab2, tab3, tab4 = st.tabs(["AI Settings", "Knowledge Base", "OCR Settings", "Display Settings"])
     
     with tab1:
         render_ai_settings(ollama_client)
     
     with tab2:
+        render_knowledge_base_settings()
+        
+    with tab3:
         render_ocr_settings()
     
-    with tab3:
+    with tab4:
         render_display_settings()
 
 def render_ai_settings(ollama_client):
@@ -293,6 +298,128 @@ def render_ocr_settings():
             
             st.session_state.ocr_settings = new_settings
             st.success("OCR visualization settings updated!")
+
+def render_knowledge_base_settings():
+    """Render knowledge base settings section."""
+    st.header("Knowledge Base Settings")
+    
+    # Get current knowledge base settings
+    if 'kb_settings' not in st.session_state:
+        st.session_state.kb_settings = {
+            'vector_store_type': DEFAULT_VECTOR_STORE,
+            'chunk_size': 500,
+            'chunk_overlap': 50,
+            'distance_func': 'cosine'
+        }
+    
+    current_settings = st.session_state.kb_settings
+    
+    # Vector store settings
+    st.subheader("Vector Store Configuration")
+    
+    # Display information about available vector stores
+    vector_store_info = {
+        "faiss": "**FAISS** (Default): Fast and efficient similarity search with good performance for most use cases.",
+        "chromadb": "**ChromaDB**: Document database designed for embeddings and semantic search.",
+        "annoy": "**Annoy**: Approximate nearest neighbors for efficient similarity search with less memory usage.",
+        "simple": "**Simple**: Basic in-memory vector store for testing or small knowledge bases."
+    }
+    
+    # Show information about each vector store
+    for store_type, info in vector_store_info.items():
+        if store_type == current_settings['vector_store_type']:
+            st.success(info + " (Currently Active)")
+        else:
+            st.info(info)
+    
+    with st.form("kb_settings_form"):
+        # Vector store type selection
+        vector_store_type = st.selectbox(
+            "Vector Store Engine",
+            options=VECTOR_STORE_OPTIONS,
+            index=VECTOR_STORE_OPTIONS.index(current_settings.get('vector_store_type', DEFAULT_VECTOR_STORE)),
+            help="Select which vector store engine to use for the knowledge base"
+        )
+        
+        # Distance function
+        distance_options = {
+            'cosine': 'Cosine Similarity (Default)',
+            'l2': 'Euclidean Distance',
+            'ip': 'Inner Product'
+        }
+        
+        distance_func = st.selectbox(
+            "Distance Function",
+            options=list(distance_options.keys()),
+            format_func=lambda x: distance_options[x],
+            index=list(distance_options.keys()).index(current_settings.get('distance_func', 'cosine')),
+            help="Select which distance function to use for similarity comparison"
+        )
+        
+        # Chunking settings
+        st.subheader("Document Chunking")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            chunk_size = st.number_input(
+                "Chunk Size",
+                min_value=100,
+                max_value=2000,
+                value=int(current_settings.get('chunk_size', 500)),
+                step=50,
+                help="Size of text chunks to create from documents (in characters)"
+            )
+        
+        with col2:
+            chunk_overlap = st.number_input(
+                "Chunk Overlap",
+                min_value=0,
+                max_value=500,
+                value=int(current_settings.get('chunk_overlap', 50)),
+                step=10,
+                help="Overlap between consecutive chunks (in characters)"
+            )
+        
+        # Submit button
+        submit_button = st.form_submit_button("Save Knowledge Base Settings")
+        
+        if submit_button:
+            # Check if vector store type has changed
+            vector_store_changed = vector_store_type != current_settings.get('vector_store_type')
+            
+            # Update settings
+            new_settings = current_settings.copy()
+            new_settings.update({
+                'vector_store_type': vector_store_type,
+                'chunk_size': chunk_size,
+                'chunk_overlap': chunk_overlap,
+                'distance_func': distance_func
+            })
+            
+            st.session_state.kb_settings = new_settings
+            
+            if vector_store_changed:
+                st.warning(
+                    "Vector store type has changed. This will take effect for new documents. "
+                    "To apply to existing documents, you will need to rebuild the knowledge base."
+                )
+            
+            st.success("Knowledge base settings updated!")
+    
+    # Advanced operations
+    st.subheader("Knowledge Base Operations")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("Rebuild Knowledge Base", key="rebuild_kb", use_container_width=True, type="primary"):
+            st.session_state.rebuild_kb = True
+            st.success("Knowledge base rebuild scheduled! This will happen when you return to the Knowledge Base page.")
+    
+    with col2:
+        if st.button("Reset Knowledge Base", key="reset_kb", use_container_width=True, type="secondary"):
+            st.session_state.reset_kb = True
+            st.warning("Knowledge base reset scheduled! This will delete all vector data when you return to the Knowledge Base page.")
 
 def render_display_settings():
     """Render display settings section."""

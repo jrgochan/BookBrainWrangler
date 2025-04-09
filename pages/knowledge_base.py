@@ -16,6 +16,46 @@ def render_knowledge_base_page(book_manager, knowledge_base):
     """
     st.title("Knowledge Base")
     
+    # Check for KB rebuild/reset requests from settings page
+    if hasattr(st.session_state, 'rebuild_kb') and st.session_state.rebuild_kb:
+        with st.spinner("Rebuilding knowledge base..."):
+            # Get current settings
+            kb_settings = st.session_state.get('kb_settings', {})
+            vector_store_type = kb_settings.get('vector_store_type', 'faiss')
+            distance_func = kb_settings.get('distance_func', 'cosine')
+            
+            # Create a new knowledge base with the selected vector store type
+            # We'll use the same knowledge_base object but with a new vector_store
+            knowledge_base.vector_store = knowledge_base.vector_store.__class__(
+                collection_name=knowledge_base.vector_store.collection_name,
+                base_path=knowledge_base.vector_store.base_path,
+                data_path=knowledge_base.vector_store.data_path,
+                embedding_function=knowledge_base.vector_store.embedding_function,
+                distance_func=distance_func,
+                vector_store_type=vector_store_type
+            )
+            
+            # Get all books that should be indexed
+            all_books = book_manager.get_all_books()
+            for book in all_books:
+                if hasattr(book, 'include_in_kb') and book.include_in_kb:
+                    # Re-index the book
+                    book_manager.add_book_to_knowledge_base(book.id, knowledge_base)
+            
+            # Reset the flag
+            st.session_state.rebuild_kb = False
+            st.success("Knowledge base has been rebuilt!")
+            
+    # Check for KB reset request
+    if hasattr(st.session_state, 'reset_kb') and st.session_state.reset_kb:
+        with st.spinner("Resetting knowledge base..."):
+            # Reset the vector store
+            knowledge_base.vector_store.reset()
+            
+            # Reset the flag
+            st.session_state.reset_kb = False
+            st.success("Knowledge base has been reset!")
+    
     # Get all books and indexed books
     all_books = book_manager.get_all_books()
     indexed_book_ids = knowledge_base.get_indexed_book_ids()
@@ -37,6 +77,13 @@ def render_knowledge_base_stats(knowledge_base):
         knowledge_base: The KnowledgeBase instance
     """
     st.header("Knowledge Base Status")
+    
+    # Get the vector store type from session state or from the knowledge base
+    kb_settings = st.session_state.get('kb_settings', {})
+    vector_store_type = kb_settings.get('vector_store_type', 'faiss')
+    
+    # Show vector store type
+    st.info(f"Vector Store: **{vector_store_type.upper()}**")
     
     # Get vector store statistics
     try:

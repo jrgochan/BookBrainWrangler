@@ -60,3 +60,10 @@ numpy
 openai
 requests
 huggingface_hub
+annoy
+faiss-cpu
+sentence-transformers
+faiss-cpu
+annoy
+chromadb
+sentence-transformers
