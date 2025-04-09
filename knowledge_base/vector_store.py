@@ -5,6 +5,7 @@ New code should use the vector_stores module.
 """
 
 import os
+import uuid
 from typing import List, Dict, Any, Optional, Callable, Type, Union, Tuple
 
 from utils.logger import get_logger
