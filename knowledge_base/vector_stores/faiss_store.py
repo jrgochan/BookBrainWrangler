@@ -59,31 +59,28 @@ class FAISSVectorStore(BaseVectorStore):
         self.gpu_enabled = use_gpu and GPU_AVAILABLE  # Public attribute
         self._using_gpu = False  # Will be set to True if GPU is actually used
 
-    # Add compatibility method to handle existing instances
-    def __getattribute__(self, name):
+    # We'll use __getattribute__ and __setattr__ for backward compatibility
+    def __getattr__(self, name):
         """
-        Override the attribute access to handle backward compatibility for gpu_enabled.
+        Handles attribute access for missing attributes (only called if normal attribute lookup fails).
+        This avoids the recursion issues with __getattribute__.
         """
         if name == "gpu_enabled":
-            try:
-                return super().__getattribute__(name)
-            except AttributeError:
-                # For backward compatibility with instances that were created before the attribute existed
-                _use_gpu = getattr(self, "_use_gpu", None)
-                if _use_gpu is not None and isinstance(_use_gpu, bool):
-                    # Set the attribute for future access
-                    object.__setattr__(self, "gpu_enabled", _use_gpu)
-                    return _use_gpu
-                else:
-                    # Default to False if no attribute is found
-                    object.__setattr__(self, "gpu_enabled", False)
-                    return False
-        return super().__getattribute__(name)
+            # For backward compatibility with instances that were created before the attribute existed
+            # Since this is __getattr__, it's only called if the attribute doesn't exist
+            # Default to False
+            object.__setattr__(self, "gpu_enabled", False)
+            return False
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
-    # Backward compatibility property
+    # Simplified property that uses a direct method to avoid recursion
     @property
     def _use_gpu(self) -> bool:
-        return self.gpu_enabled
+        """Backward compatibility property for _use_gpu"""
+        # Use a direct attribute lookup with __dict__ to avoid recursion
+        if "gpu_enabled" in self.__dict__:
+            return self.__dict__["gpu_enabled"]
+        return False
         
     @property
     def use_gpu(self) -> bool:
