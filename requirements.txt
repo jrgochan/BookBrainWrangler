@@ -47,3 +47,4 @@ pytesseract
 faiss-cpu
 nltk
 plotly
+faiss-cpu
