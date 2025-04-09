@@ -32,6 +32,7 @@ from pages.knowledge_base import render_knowledge_base_page
 from pages.chat_with_ai import render_chat_with_ai_page
 from pages.knowledge_base_explorer import render_knowledge_base_explorer_page
 from pages.word_cloud_generator import render_word_cloud_generator_page
+from pages.document_heatmap import render as render_document_heatmap_page
 from pages.settings import render_settings_page
 
 # Import UI helpers
@@ -219,6 +220,9 @@ def main():
             
             elif selected_mode == "Word Cloud Generator":
                 render_word_cloud_generator_page(book_manager)
+                
+            elif selected_mode == "Document Heatmap":
+                render_document_heatmap_page()
                 
             elif selected_mode == "Settings":
                 render_settings_page(ollama_client)

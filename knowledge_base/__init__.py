@@ -348,6 +348,33 @@ class KnowledgeBase:
             List of book IDs
         """
         return self.analytics.get_indexed_book_ids()
+        
+    def search(self, query, limit=5, filter=None):
+        """
+        Search the knowledge base for relevant documents.
+        
+        Args:
+            query: The search query
+            limit: Maximum number of results to return
+            filter: Optional metadata filters
+            
+        Returns:
+            List of dictionaries with search results including score and document
+        """
+        try:
+            # Use the search engine to get raw documents with scores
+            results = self.search_engine.get_raw_documents_with_query(
+                query=query,
+                num_results=limit,
+                filter=filter
+            )
+            
+            logger.info(f"Search for '{query[:30]}...' returned {len(results)} results")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error searching knowledge base: {str(e)}")
+            return []
     
     def rebuild_knowledge_base(self, book_manager, progress_callback=None):
         """

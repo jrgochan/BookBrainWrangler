@@ -45,3 +45,5 @@ easyocr
 numpy
 pytesseract
 faiss-cpu
+nltk
+plotly

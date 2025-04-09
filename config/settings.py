@@ -18,6 +18,7 @@ APP_MODES = [
     "Chat with AI", 
     "Knowledge Base Explorer", 
     "Word Cloud Generator", 
+    "Document Heatmap",
     "Settings"
 ]
 
