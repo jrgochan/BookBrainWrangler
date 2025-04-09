@@ -1,0 +1,76 @@
+base) PS C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler> scripts/run_bookbrainwrangler.ps1
+Starting BookBrainWrangler application with Streamlit...
+Project root: C:\Users\jrgochan.flux-bawkz\code\github.com\jrgochan\BookBrainWrangler
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://0.0.0.0:5000
+
+INFO - Logger initialized
+2025-04-09 17:01:27 - book_knowledge_ai - INFO - Logger initialized
+INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 17:01:32 - knowledge_base.embedding - INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 17:01:32 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-04-09 17:01:32 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2      
+INFO - Document processor initialized
+2025-04-09 17:01:37 - document_processing.processor - INFO - Document processor initialized
+INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 17:01:37 - knowledge_base.embedding - INFO - Loading SentenceTransformer model: all-MiniLM-L6-v2
+2025-04-09 17:01:37 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: cpu
+2025-04-09 17:01:37 - sentence_transformers.SentenceTransformer - INFO - Load pretrained SentenceTransformer: all-MiniLM-L6-v2      
+2025-04-09 17:01:40 - faiss.loader - INFO - Loading faiss with AVX512 support.
+2025-04-09 17:01:40 - faiss.loader - INFO - Could not load library with AVX512 support due to:
+ModuleNotFoundError("No module named 'faiss.swigfaiss_avx512'")
+2025-04-09 17:01:40 - faiss.loader - INFO - Loading faiss with AVX2 support.
+2025-04-09 17:01:40 - faiss.loader - INFO - Successfully loaded faiss with AVX2 support.
+2025-04-09 17:01:40 - faiss - INFO - Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes.
+INFO - FAISS GPU support not available, using CPU version
+2025-04-09 17:01:40 - knowledge_base.vector_stores.faiss_store - INFO - FAISS GPU support not available, using CPU version
+Batches: 100%|███████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 33.21it/s]
+INFO - FAISS index initialized with dimension 384 (GPU: False)
+2025-04-09 17:01:40 - knowledge_base.vector_stores.faiss_store - INFO - FAISS index initialized with dimension 384 (GPU: False)     
+INFO - Vector store initialized with collection 'book_knowledge'
+2025-04-09 17:01:40 - knowledge_base.vector_stores.base - INFO - Vector store initialized with collection 'book_knowledge'
+INFO - Vector store initialized with type 'faiss' and collection 'book_knowledge'
+2025-04-09 17:01:40 - knowledge_base.vector_store - INFO - Vector store initialized with type 'faiss' and collection 'book_knowledge'
+INFO - Session state initialized
+2025-04-09 17:01:40 - __main__ - INFO - Session state initialized
+2025-04-09 17:01:41.084 Examining the path of torch.classes raised:
+Traceback (most recent call last):
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamlit\web\bootstrap.py", line 347, in run   
+    if asyncio.get_running_loop().is_running():
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: no running event loop
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamlit\watcher\local_sources_watcher.py", line 217, in get_module_paths
+    potential_paths = extract_paths(module)
+                      ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\streamlit\watcher\local_sources_watcher.py", line 210, in <lambda>
+    lambda m: list(m.__path__._path),
+                   ^^^^^^^^^^^^^^^^
+  File "C:\Users\jrgochan.flux-bawkz\AppData\Roaming\Python\Python312\site-packages\torch\_classes.py", line 13, in __getattr__     
+    proxy = torch._C._get_custom_class_python_wrapper(self.name, attr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Tried to instantiate class '__path__._path', but it does not exist! Ensure that it is registered via torch::class_    
+INFO - Saved uploaded file: temp\upload_1744239708.pdf
+2025-04-09 17:01:48 - document_processing.processor - INFO - Saved uploaded file: temp\upload_1744239708.pdf
+INFO - Processing PDF file: temp\upload_1744239708.pdf
+2025-04-09 17:01:48 - document_processing.processor - INFO - Processing PDF file: temp\upload_1744239708.pdf
+ERROR - Error extracting text from PDF temp\upload_1744239708.pdf: PDFProcessor.process.<locals>.send_progress() missing 1 required positional argument: 'message'
+2025-04-09 17:01:48 - document_processing.formats.pdf - ERROR - Error extracting text from PDF temp\upload_1744239708.pdf: PDFProcessor.process.<locals>.send_progress() missing 1 required positional argument: 'message'
+INFO - Extracting images from PDF: temp\upload_1744239708.pdf
+2025-04-09 17:01:48 - document_processing.formats.pdf - INFO - Extracting images from PDF: temp\upload_1744239708.pdf
+ERROR - Error extracting images from PDF temp\upload_1744239708.pdf: PDFProcessor.process.<locals>.send_progress() missing 1 required positional argument: 'message'
+2025-04-09 17:04:56 - document_processing.formats.pdf - ERROR - Error extracting images from PDF temp\upload_1744239708.pdf: PDFProcessor.process.<locals>.send_progress() missing 1 required positional argument: 'message'
+INFO - Successfully processed PDF file: temp\upload_1744239708.pdf
+2025-04-09 17:04:56 - document_processing.formats.pdf - INFO - Successfully processed PDF file: temp\upload_1744239708.pdf
+INFO - Successfully processed document: temp\upload_1744239708.pdf
+2025-04-09 17:04:56 - document_processing.processor - INFO - Successfully processed document: temp\upload_1744239708.pdf
+ERROR - Error processing document: 'VectorStore' object has no attribute 'generate_id'
+2025-04-09 17:04:56 - __main__ - ERROR - Error processing document: 'VectorStore' object has no attribute 'generate_id'
