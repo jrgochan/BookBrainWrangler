@@ -25,7 +25,8 @@ from knowledge_base.utils import (
 from knowledge_base.embedding import (
     get_embedding_function,
     get_embeddings,
-    default_embedding_function
+    default_embedding_function,
+    safe_get_embeddings
 )
 from knowledge_base.chunking import chunk_document
 
@@ -33,12 +34,61 @@ from knowledge_base.chunking import chunk_document
 try:
     import chromadb
     from chromadb.config import Settings
+    from chromadb.utils import embedding_functions
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
 
 # Initialize logger
 logger = get_logger(__name__)
+
+class ChromaEmbeddingFunction(embedding_functions.EmbeddingFunction):
+    """
+    Wrapper class to adapt our embedding functions to ChromaDB's expected interface.
+    ChromaDB expects embedding functions to have a specific signature.
+    """
+    
+    def __init__(self, embedding_func: Callable):
+        """
+        Initialize with our embedding function.
+        
+        Args:
+            embedding_func: The function to wrap
+        """
+        self.embedding_func = embedding_func
+    
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """
+        Generate embeddings for a list of texts.
+        
+        Args:
+            input: List of texts to embed
+            
+        Returns:
+            List of embedding vectors
+        """
+        # Handle empty input
+        if not input:
+            return []
+        
+        try:
+            # If input is a single string, convert to list
+            if isinstance(input, str):
+                input = [input]
+            
+            # Generate embeddings using our function
+            embeddings = safe_get_embeddings(input)
+            
+            # Ensure result is a list of lists
+            if not isinstance(embeddings[0], list):
+                embeddings = [embeddings]
+                
+            return embeddings
+            
+        except Exception as e:
+            logger.error(f"Error in ChromaEmbeddingFunction: {str(e)}")
+            # Return zero vectors as a fallback
+            return [[0.0] * DEFAULT_EMBEDDING_DIMENSION for _ in input]
 
 class KnowledgeBase:
     """
@@ -74,7 +124,14 @@ class KnowledgeBase:
         os.makedirs(self.data_path, exist_ok=True)
         
         # Set embedding function
-        self.embedding_function = embedding_function or default_embedding_function
+        self.raw_embedding_function = embedding_function or default_embedding_function
+        
+        # For ChromaDB, we need to wrap the embedding function
+        if CHROMADB_AVAILABLE:
+            # Create a wrapper for the embedding function that follows ChromaDB's interface
+            self.embedding_function = ChromaEmbeddingFunction(self.raw_embedding_function)
+        else:
+            self.embedding_function = self.raw_embedding_function
         
         # Initialize vector store
         self._init_vector_store()
@@ -361,8 +418,10 @@ class KnowledgeBase:
             
             # Get chunks for this document
             if CHROMADB_AVAILABLE:
+                # Use where filter in get method
+                where_filter = {"document_id": document_id}
                 chunks = self.collection.get(
-                    where={"document_id": document_id}
+                    where=where_filter
                 )
                 
                 if chunks and "documents" in chunks and chunks["documents"]:
@@ -497,9 +556,21 @@ class KnowledgeBase:
             
             # Count chunks
             if CHROMADB_AVAILABLE:
-                chunk_count = self.collection.count()
+                try:
+                    # ChromaDB's count method returns the number of entries in the collection
+                    chunk_count = self.collection.count()
+                except AttributeError:
+                    # Fall back to get() method if count() is not available
+                    try:
+                        # Get all ids without filtering
+                        results = self.collection.get(include=["ids"])
+                        chunk_count = len(results["ids"]) if "ids" in results else 0
+                    except Exception as e:
+                        logger.error(f"Error getting chunk count from ChromaDB: {str(e)}")
+                        chunk_count = 0
             else:
-                chunk_count = len(self.collection["documents"])
+                # For simple store, just count the number of documents
+                chunk_count = len(self.collection["documents"]) if "documents" in self.collection else 0
             
             stats["chunk_count"] = chunk_count
             

@@ -51,23 +51,23 @@ def render_sidebar():
         
         # Navigation
         st.header("Navigation")
-        if st.button("📚 Home", use_container_width=True):
+        if st.button("📚 Home", key="sidebar_home_btn", use_container_width=True):
             st.session_state.current_page = "home"
             st.rerun()
         
-        if st.button("📄 Book Management", use_container_width=True):
+        if st.button("📄 Book Management", key="sidebar_book_mgmt_btn", use_container_width=True):
             st.session_state.current_page = "book_management"
             st.rerun()
         
-        if st.button("🔍 Knowledge Base", use_container_width=True):
+        if st.button("🔍 Knowledge Base", key="sidebar_kb_btn", use_container_width=True):
             st.session_state.current_page = "knowledge_base"
             st.rerun()
         
-        if st.button("💬 Chat with AI", use_container_width=True):
+        if st.button("💬 Chat with AI", key="sidebar_chat_btn", use_container_width=True):
             st.session_state.current_page = "chat"
             st.rerun()
         
-        if st.button("⚙️ Settings", use_container_width=True):
+        if st.button("⚙️ Settings", key="sidebar_settings_btn", use_container_width=True):
             st.session_state.current_page = "settings"
             st.rerun()
         
@@ -107,17 +107,17 @@ def render_home_page():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📄 Manage Documents", use_container_width=True):
+        if st.button("📄 Manage Documents", key="home_manage_docs_btn", use_container_width=True):
             st.session_state.current_page = "book_management"
             st.rerun()
     
     with col2:
-        if st.button("🔍 Explore Knowledge Base", use_container_width=True):
+        if st.button("🔍 Explore Knowledge Base", key="home_explore_kb_btn", use_container_width=True):
             st.session_state.current_page = "knowledge_base"
             st.rerun()
     
     with col3:
-        if st.button("💬 Chat with AI", use_container_width=True):
+        if st.button("💬 Chat with AI", key="home_chat_btn", use_container_width=True):
             st.session_state.current_page = "chat"
             st.rerun()
 
@@ -278,7 +278,7 @@ def render_chat_page():
     if kb_stats.get("document_count", 0) == 0:
         st.warning("Your knowledge base is empty. Please add documents first.")
         
-        if st.button("Go to Book Management"):
+        if st.button("Go to Book Management", key="chat_to_book_management_btn"):
             st.session_state.current_page = "book_management"
             st.rerun()
         
@@ -366,10 +366,10 @@ def render_settings_page():
     st.header("Reset Knowledge Base")
     st.warning("⚠️ This will delete all documents from your knowledge base. This action cannot be undone.")
     
-    if st.button("Reset Knowledge Base"):
-        confirm = st.checkbox("I understand that this action cannot be undone")
+    if st.button("Reset Knowledge Base", key="reset_kb_btn"):
+        confirm = st.checkbox("I understand that this action cannot be undone", key="reset_kb_confirm_checkbox")
         
-        if confirm and st.button("Confirm Reset", key="confirm_reset"):
+        if confirm and st.button("Confirm Reset", key="confirm_reset_btn"):
             st.session_state.knowledge_base.reset()
             st.success("Knowledge base has been reset.")
             st.rerun()
