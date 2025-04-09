@@ -6,11 +6,17 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import plotly.express as px
 import re
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import time
+
+# Try to import plotly (but have matplotlib as fallback)
+try:
+    import plotly.express as px
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
 
 def render_knowledge_base_explorer_page(knowledge_base):
     """
@@ -286,51 +292,110 @@ def render_vector_visualization(knowledge_base):
                 
                 # Create visualization based on selection
                 with viz_container:
-                    if viz_type == "2D Scatter":
-                        fig = px.scatter(
-                            df, x='Dim1', y='Dim2',
-                            color='Document Type',
-                            hover_data=['Book ID', 'Source', 'Index'],
-                            title=f"2D Document Visualization ({dim_reduction})",
-                            labels={'Dim1': f'{dim_reduction} Dimension 1', 'Dim2': f'{dim_reduction} Dimension 2'},
-                            color_discrete_sequence=px.colors.qualitative.Plotly
-                        )
-                        # Add more styling
-                        fig.update_traces(marker=dict(size=10, opacity=0.7))
-                        fig.update_layout(
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                            margin=dict(l=20, r=20, t=40, b=20)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Explained variance for PCA
-                        if explained_variance is not None:
-                            st.caption(f"The first two principal components explain approximately {explained_variance:.2f}% of the variance.")
-                        
+                    if PLOTLY_AVAILABLE:
+                        if viz_type == "2D Scatter":
+                            fig = px.scatter(
+                                df, x='Dim1', y='Dim2',
+                                color='Document Type',
+                                hover_data=['Book ID', 'Source', 'Index'],
+                                title=f"2D Document Visualization ({dim_reduction})",
+                                labels={'Dim1': f'{dim_reduction} Dimension 1', 'Dim2': f'{dim_reduction} Dimension 2'},
+                                color_discrete_sequence=px.colors.qualitative.Plotly
+                            )
+                            # Add more styling
+                            fig.update_traces(marker=dict(size=10, opacity=0.7))
+                            fig.update_layout(
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                                margin=dict(l=20, r=20, t=40, b=20)
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Explained variance for PCA
+                            if explained_variance is not None:
+                                st.caption(f"The first two principal components explain approximately {explained_variance:.2f}% of the variance.")
+                            
+                        else:
+                            fig = px.scatter_3d(
+                                df, x='Dim1', y='Dim2', z='Dim3',
+                                color='Document Type',
+                                hover_data=['Book ID', 'Source', 'Index'],
+                                title=f"3D Document Visualization ({dim_reduction})",
+                                labels={
+                                    'Dim1': f'{dim_reduction} Dimension 1', 
+                                    'Dim2': f'{dim_reduction} Dimension 2',
+                                    'Dim3': f'{dim_reduction} Dimension 3'
+                                },
+                                color_discrete_sequence=px.colors.qualitative.Plotly
+                            )
+                            # Add more styling
+                            fig.update_traces(marker=dict(size=5, opacity=0.7))
+                            fig.update_layout(
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                                margin=dict(l=20, r=20, t=40, b=20)
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Explained variance for PCA
+                            if explained_variance is not None:
+                                st.caption(f"The first three principal components explain approximately {explained_variance:.2f}% of the variance.")
                     else:
-                        fig = px.scatter_3d(
-                            df, x='Dim1', y='Dim2', z='Dim3',
-                            color='Document Type',
-                            hover_data=['Book ID', 'Source', 'Index'],
-                            title=f"3D Document Visualization ({dim_reduction})",
-                            labels={
-                                'Dim1': f'{dim_reduction} Dimension 1', 
-                                'Dim2': f'{dim_reduction} Dimension 2',
-                                'Dim3': f'{dim_reduction} Dimension 3'
-                            },
-                            color_discrete_sequence=px.colors.qualitative.Plotly
-                        )
-                        # Add more styling
-                        fig.update_traces(marker=dict(size=5, opacity=0.7))
-                        fig.update_layout(
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                            margin=dict(l=20, r=20, t=40, b=20)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                        # Matplotlib fallback when plotly is not available
+                        st.warning("Plotly is not available. Using Matplotlib for visualization (basic features only).")
                         
-                        # Explained variance for PCA
-                        if explained_variance is not None:
-                            st.caption(f"The first three principal components explain approximately {explained_variance:.2f}% of the variance.")
+                        # Create a matplotlib figure
+                        if viz_type == "2D Scatter":
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            
+                            # Get unique document types for coloring
+                            doc_types = df['Document Type'].unique()
+                            
+                            # Plot each document type with a different color
+                            for doc_type in doc_types:
+                                subset = df[df['Document Type'] == doc_type]
+                                ax.scatter(subset['Dim1'], subset['Dim2'], label=doc_type, alpha=0.7)
+                            
+                            ax.set_title(f"2D Document Visualization ({dim_reduction})")
+                            ax.set_xlabel(f"{dim_reduction} Dimension 1")
+                            ax.set_ylabel(f"{dim_reduction} Dimension 2")
+                            ax.legend()
+                            ax.grid(True, linestyle='--', alpha=0.7)
+                            
+                            st.pyplot(fig)
+                            
+                            # Explained variance for PCA
+                            if explained_variance is not None:
+                                st.caption(f"The first two principal components explain approximately {explained_variance:.2f}% of the variance.")
+                        else:
+                            # For 3D visualization, we need an additional import
+                            try:
+                                from mpl_toolkits.mplot3d import Axes3D
+                                
+                                fig = plt.figure(figsize=(10, 8))
+                                ax = fig.add_subplot(111, projection='3d')
+                                
+                                # Get unique document types for coloring
+                                doc_types = df['Document Type'].unique()
+                                
+                                # Plot each document type with a different color
+                                for doc_type in doc_types:
+                                    subset = df[df['Document Type'] == doc_type]
+                                    ax.scatter(subset['Dim1'], subset['Dim2'], subset['Dim3'], 
+                                              label=doc_type, alpha=0.7)
+                                
+                                ax.set_title(f"3D Document Visualization ({dim_reduction})")
+                                ax.set_xlabel(f"{dim_reduction} Dimension 1")
+                                ax.set_ylabel(f"{dim_reduction} Dimension 2")
+                                ax.set_zlabel(f"{dim_reduction} Dimension 3")
+                                ax.legend()
+                                
+                                st.pyplot(fig)
+                                
+                                # Explained variance for PCA
+                                if explained_variance is not None:
+                                    st.caption(f"The first three principal components explain approximately {explained_variance:.2f}% of the variance.")
+                            except Exception as e:
+                                st.error(f"Unable to create 3D plot with Matplotlib: {str(e)}")
+                                st.error("Try installing Plotly for better 3D visualization.")
                 
                 # Show calculation time
                 end_time = time.time()
@@ -404,18 +469,32 @@ def render_metadata_analysis(knowledge_base):
                 'Document Count': list(book_counts.values())
             }).sort_values(by='Document Count', ascending=False)
             
-            # Horizontal bar chart for better readability with many books
-            fig = px.bar(
-                book_df, 
-                y='Book', 
-                x='Document Count', 
-                title="Document Distribution by Book",
-                orientation='h',
-                color='Document Count',
-                color_continuous_scale=px.colors.sequential.Viridis
-            )
-            fig.update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig, use_container_width=True)
+            if PLOTLY_AVAILABLE:
+                # Horizontal bar chart for better readability with many books
+                fig = px.bar(
+                    book_df, 
+                    y='Book', 
+                    x='Document Count', 
+                    title="Document Distribution by Book",
+                    orientation='h',
+                    color='Document Count',
+                    color_continuous_scale=px.colors.sequential.Viridis
+                )
+                fig.update_layout(yaxis={'categoryorder':'total ascending'})
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                # Matplotlib fallback
+                fig, ax = plt.subplots(figsize=(10, 6))
+                book_df.sort_values('Document Count').plot.barh(
+                    x='Book', 
+                    y='Document Count', 
+                    ax=ax,
+                    legend=False
+                )
+                ax.set_title("Document Distribution by Book")
+                ax.set_xlabel("Document Count")
+                plt.tight_layout()
+                st.pyplot(fig)
             
             # Show actual data disclaimer
             if len(available_book_ids) > 0:
@@ -464,17 +543,25 @@ def render_metadata_analysis(knowledge_base):
                 'Count': list(formatted_types.values())
             })
             
-            # Create pie chart
-            fig = px.pie(
-                doc_type_df, 
-                values='Count', 
-                names='Type', 
-                title="Document Types in Knowledge Base",
-                color_discrete_sequence=px.colors.qualitative.Plotly
-            )
-            # Add percentage to labels
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
+            if PLOTLY_AVAILABLE:
+                # Create pie chart
+                fig = px.pie(
+                    doc_type_df, 
+                    values='Count', 
+                    names='Type', 
+                    title="Document Types in Knowledge Base",
+                    color_discrete_sequence=px.colors.qualitative.Plotly
+                )
+                # Add percentage to labels
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                # Matplotlib fallback for pie chart
+                fig, ax = plt.subplots(figsize=(8, 8))
+                ax.pie(doc_type_df['Count'], labels=doc_type_df['Type'], autopct='%1.1f%%')
+                ax.set_title("Document Types in Knowledge Base")
+                plt.tight_layout()
+                st.pyplot(fig)
             
         # Chunk settings visualization
         st.subheader("Text Chunking Strategy")
@@ -502,28 +589,59 @@ def render_metadata_analysis(knowledge_base):
             lambda x: 'Overlap' if x in overlap_positions else 'No Overlap'
         )
         
-        # Create the visualization
-        fig = px.bar(
-            chunk_visual_df, 
-            x='Position', 
-            y='Value', 
-            color='Overlap',
-            barmode='overlay',
-            facet_row='Chunk',
-            labels={'Position': 'Text Position (characters)', 'Value': ''},
-            title=f"Text Chunking Strategy: {chunk_size} characters with {chunk_overlap} overlap",
-            height=300,
-            color_discrete_map={'Overlap': 'rgba(255, 0, 0, 0.7)', 'No Overlap': 'rgba(0, 0, 255, 0.7)'}
-        )
-        
-        # Improve the layout
-        fig.update_layout(
-            showlegend=True,
-            yaxis_visible=False,
-            yaxis_showticklabels=False
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+        if PLOTLY_AVAILABLE:
+            # Create the visualization with plotly
+            fig = px.bar(
+                chunk_visual_df, 
+                x='Position', 
+                y='Value', 
+                color='Overlap',
+                barmode='overlay',
+                facet_row='Chunk',
+                labels={'Position': 'Text Position (characters)', 'Value': ''},
+                title=f"Text Chunking Strategy: {chunk_size} characters with {chunk_overlap} overlap",
+                height=300,
+                color_discrete_map={'Overlap': 'rgba(255, 0, 0, 0.7)', 'No Overlap': 'rgba(0, 0, 255, 0.7)'}
+            )
+            
+            # Improve the layout
+            fig.update_layout(
+                showlegend=True,
+                yaxis_visible=False,
+                yaxis_showticklabels=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            # Matplotlib fallback for chunking visualization
+            st.warning("Using simplified visualization for chunking strategy.")
+            
+            # Create a simpler representation with matplotlib
+            fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
+            fig.suptitle(f"Text Chunking Strategy: {chunk_size} characters with {chunk_overlap} overlap")
+            
+            for i, chunk_name in enumerate(['Chunk 1', 'Chunk 2', 'Chunk 3']):
+                chunk_data = chunk_visual_df[chunk_visual_df['Chunk'] == chunk_name]
+                
+                # Plot non-overlapping parts
+                non_overlap = chunk_data[chunk_data['Overlap'] == 'No Overlap']
+                if not non_overlap.empty:
+                    axes[i].bar(non_overlap['Position'], non_overlap['Value'], 
+                               color='blue', alpha=0.7, label='No Overlap')
+                
+                # Plot overlapping parts
+                overlap = chunk_data[chunk_data['Overlap'] == 'Overlap']
+                if not overlap.empty:
+                    axes[i].bar(overlap['Position'], overlap['Value'], 
+                               color='red', alpha=0.7, label='Overlap')
+                
+                axes[i].set_ylabel(chunk_name)
+                axes[i].set_yticks([])
+                
+            axes[0].legend()
+            axes[2].set_xlabel('Text Position (characters)')
+            plt.tight_layout()
+            st.pyplot(fig)
         
         # Embedding model information
         st.subheader("Embedding Model")

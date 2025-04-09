@@ -5,12 +5,17 @@ that transforms documents into an interactive, AI-enhanced knowledge base.
 """
 
 import os
-import streamlit as st
 import time
 import platform
 import sys
 from loguru import logger
 from utils.logging_config import configure_logger
+
+# Apply Streamlit patches before importing streamlit
+from utils.streamlit_patch import apply_patches
+apply_patches()
+
+import streamlit as st
 
 # Configure logger
 logger = configure_logger()

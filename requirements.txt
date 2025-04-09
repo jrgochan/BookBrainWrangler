@@ -1,26 +1,23 @@
+# requirements.txt
+
 # Core requirements
-chromadb==0.4.18  # Specific version to avoid conflicts
 langchain>=0.3.23
 langchain-community>=0.3.21
 langchain-text-splitters>=0.3.8
-langchain-chroma==0.1.4  # Compatible with chromadb 0.4.18
-loguru>=0.7.2  # Robust, simple logging
+loguru>=0.7.3        # Keep only one loguru line
+torch>=2.6.0
 pdf2image>=1.17.0
 pypdf2>=3.0.1
 pytesseract>=0.3.13
 requests>=2.32.3
 streamlit>=1.44.1
-
-# Data visualization and analysis
-matplotlib>=3.7.0
-pandas>=2.0.0
-plotly>=5.13.0
-scikit-learn>=1.2.0
-nltk>=3.8.1
-wordcloud>=1.9.1
-numpy>=1.23.0
-
-# Additional dependencies
+matplotlib>=3.9.2
+pandas>=2.2.3
+plotly>=5.24.1
+scikit-learn>=1.6.1
+nltk>=3.9.1
+wordcloud>=1.9.4
+numpy>=1.26.4
 attr>=0.3.2
 ConfigParser>=7.2.0
 contextlib2>=21.6.0
@@ -31,9 +28,10 @@ importlib_metadata>=8.6.1
 ipython>=8.12.3
 ipywidgets>=8.1.5
 Jinja2>=3.1.6
-python-docx>=0.8.11
+python-docx>=1.1.2
+sentence-transformers>=4.0.2
+docx>=0.2.4
 
-# Optional - install if needed
-sentence-transformers
-docx
-loguru
+# Specific package constraints
+faiss-cpu==1.10.0      # Pinned to version that works with Python 3.12
+langchain-faiss>=0.0.4 # Pinned, compatible with faiss-cpu
