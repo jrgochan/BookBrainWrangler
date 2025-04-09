@@ -50,7 +50,7 @@ def render_upload_section(book_manager, document_processor):
         type=["pdf", "docx"]
     )
     
-    # Auto-extract metadata from uploaded file
+    # Auto-extract metadata from uploaded file with improved progress display
     extracted_metadata = {}
     if uploaded_file and 'extracted_metadata' not in st.session_state:
         # Save uploaded file temporarily to extract metadata
@@ -61,21 +61,83 @@ def render_upload_section(book_manager, document_processor):
             with open(temp_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             
-            # Show metadata extraction status
-            with st.status("Extracting metadata...", expanded=False) as status:
-                st.write("Analyzing document for metadata...")
+            # Create a more interactive metadata extraction UI
+            meta_col1, meta_col2 = st.columns([3, 1])
+            
+            with meta_col1:
+                meta_status = st.status("Extracting metadata...", expanded=True) 
+                meta_progress = st.progress(0, text="Preparing to analyze document...")
+            
+            with meta_col2:
+                st.info(f"File: {uploaded_file.name}")
+                file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
+                st.caption(f"Size: {file_size_mb:.2f} MB")
+            
+            # Show more detailed extraction steps
+            with meta_status:
+                # Step 1: Initialize
+                meta_progress.progress(10, text="Initializing document processor...")
+                time.sleep(0.2)  # Small delay for visual feedback
+                
+                # Step 2: Document type detection
+                meta_progress.progress(20, text="Detecting document type...")
+                time.sleep(0.2)
+                
+                file_type = "PDF" if file_ext == '.pdf' else "DOCX" if file_ext == '.docx' else "Document"
+                st.write(f"📄 Document type: **{file_type}**")
+                
+                # Step 3: Content preview
+                if file_ext == '.pdf':
+                    try:
+                        from document_processing.pdf_processor import extract_page_as_image, image_to_base64
+                        
+                        meta_progress.progress(30, text="Generating preview...")
+                        preview_image = extract_page_as_image(temp_path, 1)
+                        if preview_image:
+                            preview_base64 = image_to_base64(preview_image)
+                            st.image(f"data:image/jpeg;base64,{preview_base64}", 
+                                     caption="First page preview", 
+                                     width=300)
+                    except Exception as e:
+                        st.warning(f"Preview generation failed: {str(e)}")
+                
+                # Step 4: Extract metadata
+                meta_progress.progress(50, text="Analyzing document for metadata...")
+                
                 # Extract metadata
                 extracted_metadata = document_processor.extract_metadata(temp_path)
-                status.update(label="Metadata extracted!", state="complete")
+                
+                # Step 5: Display found metadata
+                meta_progress.progress(90, text="Metadata found!")
+                
+                found_items = []
+                if extracted_metadata.get('title'):
+                    found_items.append(f"📚 **Title**: {extracted_metadata['title']}")
+                if extracted_metadata.get('author'):
+                    found_items.append(f"✍️ **Author**: {extracted_metadata['author']}")
+                if extracted_metadata.get('categories') and len(extracted_metadata['categories']) > 0:
+                    found_items.append(f"🏷️ **Categories**: {', '.join(extracted_metadata['categories'])}")
+                
+                if found_items:
+                    st.write("### Found Metadata")
+                    for item in found_items:
+                        st.write(item)
+                else:
+                    st.write("⚠️ No metadata found automatically. Please fill in the details below.")
+                
+                # Final step
+                meta_progress.progress(100, text="Metadata extraction complete!")
+                meta_status.update(label="Metadata extracted successfully!", state="complete")
                 
                 # Store in session state to avoid re-extracting
                 st.session_state.extracted_metadata = extracted_metadata
                 
-                # Clean up temp file
-                try:
-                    os.remove(temp_path)
-                except:
-                    pass  # Ignore errors in cleanup
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+            except:
+                pass  # Ignore errors in cleanup
+                
         except Exception as e:
             st.warning(f"Could not extract metadata automatically: {str(e)}")
             st.session_state.extracted_metadata = {}
@@ -101,8 +163,20 @@ def render_upload_section(book_manager, document_processor):
     book_category = st.text_input("Category (comma-separated for multiple categories)",
                                  value=default_categories)
     
-    # Process button
-    if uploaded_file and st.button("Process Book"):
+    # Process button - Improved UI
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        process_button = st.button("Process Book", type="primary", use_container_width=True)
+    with col2:
+        reset_button = st.button("Reset Form", use_container_width=True)
+        
+    if reset_button:
+        # Clear the form and extracted metadata
+        if 'extracted_metadata' in st.session_state:
+            del st.session_state.extracted_metadata
+        st.rerun()
+        
+    if uploaded_file and process_button:
         # Validate input
         if not book_title:
             st.error("Please enter a book title")
@@ -112,18 +186,35 @@ def render_upload_section(book_manager, document_processor):
             st.error("Please enter a book author")
             return
         
-        # Create a progress tracking container
-        progress_container = st.empty()
-        status_container = st.empty()
-        info_container = st.empty()
+        # Create a processing status container with expanded view
+        process_status = st.status("Processing document...", expanded=True)
         
-        # OCR visualization containers - using a container instead of nested expander
-        st.subheader("Document Processing Details")
-        ocr_container = st.container()
-        with ocr_container:
-            ocr_image_container = st.empty()
-            ocr_text_container = st.empty()
-            ocr_confidence_container = st.empty()
+        # Create a progress tracking container
+        with process_status:
+            # Processing info header
+            st.markdown(f"### Processing: {uploaded_file.name}")
+            
+            # Create progress elements
+            progress_container = st.empty()
+            progress_bar = progress_container.progress(0, text="Initializing document processor...")
+            
+            status_container = st.empty()
+            info_container = st.empty()
+            
+            # Create tabs for different visualization aspects
+            process_tabs = st.tabs(["Page Preview", "Extracted Text", "Processing Info"])
+            
+            with process_tabs[0]:
+                ocr_image_container = st.empty()
+                ocr_confidence_container = st.empty()
+                
+            with process_tabs[1]:
+                ocr_text_container = st.empty()
+                
+            with process_tabs[2]:
+                st.caption("This tab shows technical details about the processing")
+                log_container = st.empty()
+                log_messages = []
         
         # Process the book with status updates
         try:
@@ -134,20 +225,30 @@ def render_upload_section(book_manager, document_processor):
             with open(temp_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             
-            # Initialize processing status
+            # Update log
             file_type = "PDF" if file_ext == '.pdf' else "DOCX" if file_ext == '.docx' else f"Document ({file_ext})"
-            info_container.info(f"Processing {file_type} file: {uploaded_file.name}")
+            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
             
-            # Define progress callback function
+            log_messages.append(f"📄 File: {uploaded_file.name} ({file_size_mb:.2f} MB)")
+            log_messages.append(f"📋 Type: {file_type}")
+            log_container.markdown("  \n".join(log_messages))
+            
+            # Define progress callback function with enhanced UI feedback
             def update_progress(current, total, message):
                 # Update progress bar
                 if total > 0:
-                    show_progress_bar(progress_container, current, total, "Processing")
+                    progress_value = min(100, int((current / total) * 100)) / 100
+                    progress_text = f"Processing page {current+1}/{total} ({int(progress_value*100)}%)"
+                    progress_bar.progress(progress_value, text=progress_text)
                 
                 # Handle different message formats
                 if isinstance(message, dict):
                     status_text = message.get("text", "Processing...")
-                    status_container.text(status_text)
+                    status_container.markdown(f"**Status**: {status_text}")
+                    
+                    # Add to log
+                    log_messages.append(f"🔄 {status_text}")
+                    log_container.markdown("  \n".join(log_messages))
                     
                     # Handle OCR-specific updates
                     if "current_image" in message and st.session_state.ocr_settings['show_current_image']:
@@ -163,12 +264,16 @@ def render_upload_section(book_manager, document_processor):
                     
                     # Display extracted text if available
                     if "ocr_text" in message and st.session_state.ocr_settings['show_extracted_text']:
-                        if message.get("action") == "completed":
-                            ocr_text_container.text_area(
-                                "Extracted Text", 
-                                message["ocr_text"], 
-                                height=150
-                            )
+                        text_preview = message["ocr_text"]
+                        # Truncate if too long for display
+                        if len(text_preview) > 1000:
+                            text_preview = text_preview[:1000] + "...(truncated)"
+                            
+                        ocr_text_container.text_area(
+                            "Extracted Text Preview", 
+                            text_preview,
+                            height=300
+                        )
                     
                     # Display OCR confidence if available
                     if "confidence" in message:
@@ -181,21 +286,34 @@ def render_upload_section(book_manager, document_processor):
                         if confidence < threshold:
                             conf_text = f"⚠️ {conf_text} (Low Quality)"
                             ocr_confidence_container.error(conf_text)
+                            # Add to log
+                            log_messages.append(f"⚠️ Low quality detection: {confidence:.1f}% confidence (below threshold of {threshold}%)")
                         else:
                             ocr_confidence_container.success(conf_text)
+                            # Add to log
+                            log_messages.append(f"✅ Good quality detection: {confidence:.1f}% confidence")
+                        
+                        log_container.markdown("  \n".join(log_messages))
                 else:
                     # Simple string message
-                    status_container.text(message)
+                    status_container.markdown(f"**Status**: {message}")
+                    # Add to log
+                    log_messages.append(f"ℹ️ {message}")
+                    log_container.markdown("  \n".join(log_messages))
             
             # Process the file with the callback
-            status_container.text("Starting document processing...")
+            status_container.markdown("**Status**: Starting document processing...")
             
             # For PDFs, show page count
             if file_ext == '.pdf':
                 page_count = document_processor.get_page_count(temp_path)
                 info_container.info(f"PDF has {page_count} pages to process")
+                log_messages.append(f"📑 Document has {page_count} pages")
+                log_container.markdown("  \n".join(log_messages))
             
-            # Extract content
+            # Extract content - this is the main processing step
+            progress_bar.progress(10/100, text="Starting document processing...")
+            
             extracted_content = document_processor.extract_content(
                 temp_path, 
                 include_images=True, 
@@ -203,11 +321,14 @@ def render_upload_section(book_manager, document_processor):
             )
             
             # Add book to database
-            status_container.text("Adding book to database...")
-            show_progress_bar(progress_container, 90, 100)
+            progress_bar.progress(90/100, text="Adding book to database...")
+            status_container.markdown("**Status**: Adding book to database...")
+            log_messages.append("📝 Preparing to save book to database")
+            log_container.markdown("  \n".join(log_messages))
             
             # Parse categories
             categories = [cat.strip() for cat in book_category.split(",") if cat.strip()]
+            log_messages.append(f"🏷️ Categories: {', '.join(categories) if categories else 'None'}")
             
             # Add to database
             book_id = book_manager.add_book(
@@ -219,24 +340,71 @@ def render_upload_section(book_manager, document_processor):
             )
             
             # Complete
-            show_progress_bar(progress_container, 100, 100)
-            status_container.text("Book processing complete!")
+            progress_bar.progress(100/100, text="Book processing complete!")
+            status_container.markdown("**Status**: Book processing complete!")
             
-            st.success(f"Book '{book_title}' successfully processed and added to your library!")
+            # Update log
+            log_messages.append(f"✅ Book added to database with ID: {book_id}")
+            log_container.markdown("  \n".join(log_messages))
+            
+            # Mark the process as complete
+            process_status.update(label=f"✅ Book '{book_title}' successfully processed!", state="complete")
+            
+            # Success message outside the status container
+            st.success(f"Book '{book_title}' by {book_author} successfully processed and added to your library!")
+            
+            # Additional success information
+            st.info("You can now view this book in your library below, or use it in the Knowledge Base and AI Chat features.")
+            
+            # Show a summary of what happened
+            with st.expander("Processing Summary", expanded=False):
+                st.markdown(f"""
+                ### Book Processing Summary
+                - **Title**: {book_title}
+                - **Author**: {book_author}
+                - **Categories**: {', '.join(categories) if categories else 'None'}
+                - **Source File**: {uploaded_file.name} ({file_size_mb:.2f} MB)
+                - **Extracted Text Length**: {len(extracted_content.get('text', '')) if isinstance(extracted_content, dict) else len(extracted_content)} characters
+                - **Status**: Successfully added to database
+                """)
             
             # Clear the form and extracted metadata
             if 'extracted_metadata' in st.session_state:
                 del st.session_state.extracted_metadata
                 
-            st.rerun()
+            # Button to view library
+            if st.button("View Your Book Library"):
+                st.rerun()  # This will refresh the page, showing the updated library
             
         except Exception as e:
-            status_container.text(f"Error: {str(e)}")
-            st.error(f"Error processing book: {e}")
+            # Handle errors with more detailed information
+            error_message = str(e)
+            status_container.markdown(f"**Status**: Error: {error_message}")
             
-            # Clear extracted metadata on error for next attempt
-            if 'extracted_metadata' in st.session_state:
-                del st.session_state.extracted_metadata
+            # Add error to log
+            log_messages.append(f"❌ ERROR: {error_message}")
+            log_container.markdown("  \n".join(log_messages))
+            
+            # Update status to error
+            process_status.update(label=f"⚠️ Error processing document", state="error")
+            
+            # Show error message with suggestions
+            st.error(f"Error processing book: {error_message}")
+            
+            st.warning("""
+            ### Troubleshooting Suggestions:
+            1. Check that the file format is supported (PDF or DOCX)
+            2. Verify that the file isn't corrupted
+            3. Try with a smaller file if it's very large
+            4. Check the OCR settings in the Settings page
+            """)
+            
+            # Button to try again
+            if st.button("Reset and Try Again"):
+                # Clear extracted metadata on error for next attempt
+                if 'extracted_metadata' in st.session_state:
+                    del st.session_state.extracted_metadata
+                st.rerun()
 
 def render_library_section(book_manager):
     """
