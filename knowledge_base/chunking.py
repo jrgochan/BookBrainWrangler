@@ -1,119 +1,164 @@
 """
-Text chunking module for the Knowledge Base.
-Handles splitting documents into manageable chunks for embedding.
+Text chunking module for Book Knowledge AI.
+Provides functions for chunking text for the knowledge base.
 """
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from utils.logger import get_logger
+import re
+from typing import List, Dict, Any, Optional, Union, Tuple
 
-# Get logger
+from utils.logger import get_logger
+from knowledge_base.config import (
+    DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP, DEFAULT_SPLIT_BY
+)
+
+# Initialize logger
 logger = get_logger(__name__)
 
-class TextChunker:
+def chunk_text(
+    text: str,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    split_by: str = DEFAULT_SPLIT_BY
+) -> List[str]:
     """
-    Handles the chunking of text documents for embedding.
-    """
-    def __init__(self, chunk_size=1000, chunk_overlap=200, 
-                 length_function=len, is_separator_regex=False, separator=None):
-        """
-        Initialize the text chunker.
-        
-        Args:
-            chunk_size: Size of each chunk in characters
-            chunk_overlap: Number of characters to overlap between chunks
-            length_function: Function to measure chunk size (default: len)
-            is_separator_regex: Whether separator is a regex pattern
-            separator: Custom separator pattern (if provided)
-        """
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
-        self.length_function = length_function
-        self.is_separator_regex = is_separator_regex
-        self.separator = separator
-        
-        self._initialize_splitter()
+    Split text into chunks.
     
-    def _initialize_splitter(self):
-        """Initialize the text splitter with current settings."""
-        kwargs = {
-            "chunk_size": self.chunk_size,
-            "chunk_overlap": self.chunk_overlap,
-            "length_function": self.length_function,
-            "is_separator_regex": self.is_separator_regex,
+    Args:
+        text: Text to split
+        chunk_size: Maximum chunk size in characters
+        chunk_overlap: Overlap between chunks in characters
+        split_by: How to split the text ('paragraph', 'sentence', 'character')
+        
+    Returns:
+        List of text chunks
+    """
+    if not text:
+        return []
+    
+    # Define split patterns based on split_by
+    if split_by == "paragraph":
+        # Split by double newline (paragraph)
+        split_pattern = r'\n\s*\n'
+    elif split_by == "sentence":
+        # Split by sentence-ending punctuation followed by space or newline
+        split_pattern = r'(?<=[.!?])\s'
+    elif split_by == "character":
+        # Split by character count without respect to boundaries
+        chunks = []
+        for i in range(0, len(text), chunk_size - chunk_overlap):
+            chunks.append(text[i:i + chunk_size])
+        return chunks
+    else:
+        # Default to paragraph splitting
+        split_pattern = r'\n\s*\n'
+    
+    # Split text by pattern
+    segments = re.split(split_pattern, text)
+    segments = [s.strip() for s in segments if s.strip()]
+    
+    chunks = []
+    current_chunk = ""
+    
+    for segment in segments:
+        # If adding segment exceeds chunk size and we already have content,
+        # add current chunk to list and start a new one
+        if len(current_chunk) + len(segment) > chunk_size and current_chunk:
+            chunks.append(current_chunk)
+            
+            # Start new chunk with overlap if possible
+            if chunk_overlap > 0 and len(current_chunk) > chunk_overlap:
+                # Try to find a clean break point for the overlap
+                overlap_text = current_chunk[-chunk_overlap:]
+                
+                # Find a space to break at in the overlap region
+                space_pos = overlap_text.find(' ')
+                if space_pos > 0:
+                    current_chunk = current_chunk[-(chunk_overlap - space_pos):]
+                else:
+                    current_chunk = current_chunk[-chunk_overlap:]
+            else:
+                current_chunk = ""
+        
+        # Add segment to current chunk
+        if current_chunk:
+            current_chunk += " " + segment
+        else:
+            current_chunk = segment
+        
+        # If current chunk is already at/over chunk size, add it and reset
+        if len(current_chunk) >= chunk_size:
+            chunks.append(current_chunk)
+            current_chunk = ""
+    
+    # Add any remaining content
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    # Handle empty result
+    if not chunks:
+        # If no chunks were created, create at least one with the original text,
+        # truncated if needed
+        chunks = [text[:chunk_size]]
+    
+    logger.info(f"Chunked text into {len(chunks)} chunks")
+    return chunks
+
+def chunk_document(
+    document: Dict[str, Any],
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    split_by: str = DEFAULT_SPLIT_BY
+) -> List[Dict[str, Any]]:
+    """
+    Chunk a document into smaller parts.
+    
+    Args:
+        document: Document to chunk
+        chunk_size: Maximum chunk size in characters
+        chunk_overlap: Overlap between chunks in characters
+        split_by: How to split the text ('paragraph', 'sentence', 'character')
+        
+    Returns:
+        List of document chunks with metadata
+    """
+    if not document or "text" not in document:
+        return []
+    
+    text = document["text"]
+    metadata = document.get("metadata", {})
+    
+    # Get document ID
+    doc_id = document.get("id") or metadata.get("id")
+    
+    # Chunk the text
+    text_chunks = chunk_text(
+        text,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        split_by=split_by
+    )
+    
+    # Create chunks with metadata
+    chunks = []
+    for i, chunk_text in enumerate(text_chunks):
+        # Clone metadata for each chunk
+        chunk_metadata = metadata.copy()
+        
+        # Add chunk-specific metadata
+        chunk_metadata["chunk_index"] = i
+        chunk_metadata["chunk_count"] = len(text_chunks)
+        
+        if doc_id:
+            chunk_metadata["document_id"] = doc_id
+        
+        # Create chunk document
+        chunk = {
+            "id": f"{doc_id}_chunk_{i}" if doc_id else f"chunk_{i}",
+            "text": chunk_text,
+            "metadata": chunk_metadata
         }
         
-        if self.separator:
-            kwargs["separator"] = self.separator
-            
-        self.text_splitter = RecursiveCharacterTextSplitter(**kwargs)
-        logger.debug(f"Initialized text splitter with chunk_size={self.chunk_size}, "
-                     f"chunk_overlap={self.chunk_overlap}")
-        
-    def split_text(self, text):
-        """
-        Split text into chunks.
-        
-        Args:
-            text: The text to split
-            
-        Returns:
-            List of text chunks
-        """
-        if not text:
-            logger.warning("Attempted to split empty text")
-            return []
-            
-        try:
-            chunks = self.text_splitter.split_text(text)
-            logger.debug(f"Split text into {len(chunks)} chunks")
-            return chunks
-        except Exception as e:
-            logger.error(f"Error splitting text: {str(e)}")
-            raise
+        chunks.append(chunk)
     
-    def split_texts(self, texts):
-        """
-        Split multiple texts into chunks.
-        
-        Args:
-            texts: List of texts to split
-            
-        Returns:
-            List of lists of text chunks
-        """
-        all_chunks = []
-        for i, text in enumerate(texts):
-            try:
-                chunks = self.split_text(text)
-                all_chunks.append(chunks)
-            except Exception as e:
-                logger.error(f"Error splitting text {i}: {str(e)}")
-                # Skip this text but continue with others
-                all_chunks.append([])
-                
-        return all_chunks
-    
-    def update_settings(self, chunk_size=None, chunk_overlap=None, 
-                        is_separator_regex=None, separator=None):
-        """
-        Update chunking settings and reinitialize the splitter.
-        
-        Args:
-            chunk_size: New chunk size (if provided)
-            chunk_overlap: New chunk overlap (if provided)
-            is_separator_regex: New is_separator_regex value (if provided)
-            separator: New separator value (if provided)
-        """
-        if chunk_size is not None:
-            self.chunk_size = chunk_size
-        if chunk_overlap is not None:
-            self.chunk_overlap = chunk_overlap
-        if is_separator_regex is not None:
-            self.is_separator_regex = is_separator_regex
-        if separator is not None:
-            self.separator = separator
-            
-        # Reinitialize the splitter with new settings
-        self._initialize_splitter()
-        logger.info(f"Updated text chunker settings: chunk_size={self.chunk_size}, "
-                   f"chunk_overlap={self.chunk_overlap}")
+    logger.info(f"Created {len(chunks)} document chunks")
+    return chunks

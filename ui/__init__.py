@@ -1,26 +1,9 @@
 """
 UI module for Book Knowledge AI application.
-Contains UI components, pages, and helper functions.
 """
 
-# Import UI pages for easy access
-from ui.pages import (
-    render_book_management_page,
-    render_knowledge_base_page,
-    render_knowledge_base_explorer_page,
-    render_word_cloud_generator_page,
-    render_chat_with_ai_page,
-    render_settings_page,
-    render_document_heatmap_page,
+from ui.helpers import (
+    show_spinner, show_info, show_success, show_warning, show_error,
+    show_notification, show_progress, show_file_uploader, render_empty_state,
+    render_loading_spinner, create_page_header, get_icon
 )
-
-# Export page rendering functions
-__all__ = [
-    'render_book_management_page',
-    'render_knowledge_base_page',
-    'render_knowledge_base_explorer_page',
-    'render_word_cloud_generator_page',
-    'render_chat_with_ai_page',
-    'render_settings_page',
-    'render_document_heatmap_page',
-]

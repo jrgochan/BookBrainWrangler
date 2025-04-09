@@ -1,228 +1,288 @@
 """
-Image processing and generation utilities.
+Image processing utilities for Book Knowledge AI.
+Provides functions for working with images.
 """
 
-import os
 import io
 import base64
-from typing import Tuple, List, Optional, Any
+from typing import Optional, Union, Tuple, List, Any
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
-from PIL import Image, ImageDraw, ImageFont
 from utils.logger import get_logger
 
 # Get a logger for this module
 logger = get_logger(__name__)
 
-def generate_thumbnail(file_path: str, max_size: Tuple[int, int] = (200, 280), quality: int = 85) -> str:
+def image_to_base64(image: Union[Image.Image, bytes], format: str = "JPEG") -> str:
     """
-    Generate a thumbnail image from a PDF or DOCX file.
-    For PDFs, takes the first page as the thumbnail.
-    For DOCX, generates a placeholder with the document title.
+    Convert an image to base64 string.
     
     Args:
-        file_path: Path to the file
-        max_size: Maximum thumbnail dimensions (width, height)
-        quality: JPEG quality (1-100)
+        image: PIL Image object or bytes of image data
+        format: Image format (JPEG, PNG, etc.)
         
     Returns:
-        Base64 encoded string of the thumbnail image
+        Base64-encoded string representation of the image
     """
-    if not os.path.exists(file_path):
-        return generate_placeholder_thumbnail("File Not Found", max_size)
+    if isinstance(image, Image.Image):
+        # If it's a PIL Image, convert to bytes
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format=format)
+        img_byte_arr = img_byte_arr.getvalue()
+    else:
+        # If it's already bytes, use as is
+        img_byte_arr = image
     
-    file_ext = os.path.splitext(file_path)[1].lower()
+    # Encode as base64
+    encoded = base64.b64encode(img_byte_arr).decode('ascii')
+    return encoded
+
+def bytes_to_image(image_data: bytes) -> Optional[Image.Image]:
+    """
+    Convert image data bytes to a PIL Image.
     
+    Args:
+        image_data: Bytes containing image data
+        
+    Returns:
+        PIL Image object or None if conversion fails
+    """
     try:
-        if file_ext == '.pdf':
-            # For PDFs, attempt to use pdf2image to convert first page to image
-            try:
-                import pdf2image
-                
-                # Convert the first page of the PDF to an image
-                images = pdf2image.convert_from_path(
-                    file_path, 
-                    first_page=1, 
-                    last_page=1, 
-                    size=max_size
-                )
-                
-                if images:
-                    img = images[0]
-                    # Convert to RGB if it's not already (in case it's RGBA or other format)
-                    img = img.convert('RGB')
-                    
-                    # Resize the image to fit within max_size while maintaining aspect ratio
-                    img.thumbnail(max_size)
-                    
-                    # Save to a byte buffer
-                    buffer = io.BytesIO()
-                    img.save(buffer, format="JPEG", quality=quality)
-                    buffer.seek(0)
-                    
-                    # Convert to base64
-                    return f"data:image/jpeg;base64,{base64.b64encode(buffer.getvalue()).decode('utf-8')}"
-                else:
-                    # No images were generated from the PDF
-                    return generate_placeholder_thumbnail("PDF", max_size)
-            except Exception as e:
-                logger.error(f"Error converting PDF to image: {e}")
-                # Fall back to placeholder with PDF label
-                return generate_placeholder_thumbnail("PDF", max_size)
-                
-        elif file_ext == '.docx':
-            # For DOCX, extract title from the filename and generate a placeholder
-            title = os.path.basename(file_path).replace('.docx', '')
-            return generate_placeholder_thumbnail(f"DOCX: {title}", max_size)
-        else:
-            # For unsupported formats, return a placeholder
-            return generate_placeholder_thumbnail(f"File: {os.path.basename(file_path)}", max_size)
-            
+        return Image.open(io.BytesIO(image_data))
+    except UnidentifiedImageError:
+        logger.error(f"Could not identify image format")
+        return None
     except Exception as e:
-        logger.error(f"Error generating thumbnail: {e}")
-        return generate_placeholder_thumbnail("Error", max_size)
+        logger.error(f"Error converting bytes to image: {str(e)}")
+        return None
 
-def generate_placeholder_thumbnail(text: str, size: Tuple[int, int] = (200, 280), 
-                                  bg_color: Tuple[int, int, int] = (240, 240, 240), 
-                                  text_color: Tuple[int, int, int] = (70, 70, 70)) -> str:
+def resize_image(image: Union[Image.Image, bytes], 
+                width: Optional[int] = None, 
+                height: Optional[int] = None,
+                maintain_aspect_ratio: bool = True) -> Optional[Image.Image]:
     """
-    Generate a placeholder thumbnail with text.
+    Resize an image while optionally maintaining aspect ratio.
     
     Args:
-        text: Text to display on the placeholder
-        size: Size of the thumbnail (width, height)
-        bg_color: Background color as RGB tuple
-        text_color: Text color as RGB tuple
+        image: PIL Image object or bytes of image data
+        width: Target width (if None, calculated from height)
+        height: Target height (if None, calculated from width)
+        maintain_aspect_ratio: Whether to maintain aspect ratio
         
     Returns:
-        Base64 encoded string of the placeholder image
+        Resized PIL Image or None if resizing fails
     """
-    # Create a blank image
-    img = Image.new('RGB', size, color=bg_color)
-    draw = ImageDraw.Draw(img)
-    
-    # Add a border
-    border_width = 2
-    draw.rectangle(
-        (border_width, border_width, 
-         size[0] - border_width, size[1] - border_width), 
-        outline=(200, 200, 200), 
-        width=border_width
-    )
-    
-    # Determine font size based on image size
-    font_size = max(10, size[0] // 10)  # Minimum 10px, or proportional to width
-    
-    # Try to use a system font, or fall back to default
     try:
-        font = ImageFont.truetype("DejaVuSans.ttf", font_size)
-    except:
-        # Fall back to default font
-        font = ImageFont.load_default()
-    
-    # Wrap text to fit within the image width
-    wrapped_text = wrap_text(text, font, size[0] - 20)
-    
-    # Calculate text position to center it
-    text_height = 0
-    for line in wrapped_text:
-        # Get text dimensions using the textbbox method (for newer PIL versions)
-        try:
-            # For newer PIL versions
-            bbox = font.getbbox(line)
-            line_height = bbox[3] - bbox[1]
-        except AttributeError:
-            # For older PIL versions, try textlength and fallback to approximation
-            try:
-                line_height = font_size + 4  # Approximate height based on font size
-            except:
-                line_height = font_size  # Fallback
+        # Convert to PIL Image if needed
+        img = image if isinstance(image, Image.Image) else bytes_to_image(image)
+        if img is None:
+            return None
         
-        text_height += line_height + 5  # 5px line spacing
-    
-    y = (size[1] - text_height) // 2
-    
-    # Draw each line of text
-    for line in wrapped_text:
-        try:
-            # Get text width for centering
-            bbox = font.getbbox(line)
-            line_width = bbox[2] - bbox[0]
-            line_height = bbox[3] - bbox[1]
-        except AttributeError:
-            # Fallback using approximate width
-            line_width = len(line) * (font_size // 2)  # Approximate width
-            line_height = font_size + 4  # Approximate height
+        # Calculate new dimensions
+        original_width, original_height = img.size
         
-        x = (size[0] - line_width) // 2
+        if width is None and height is None:
+            # If neither width nor height is provided, return original
+            return img
         
-        # Draw text with a subtle shadow for better visibility
-        draw.text((x+1, y+1), line, font=font, fill=(30, 30, 30))
-        draw.text((x, y), line, font=font, fill=text_color)
+        if maintain_aspect_ratio:
+            if width is not None and height is None:
+                # Calculate height based on width
+                ratio = width / original_width
+                height = int(original_height * ratio)
+            elif height is not None and width is None:
+                # Calculate width based on height
+                ratio = height / original_height
+                width = int(original_width * ratio)
+            elif width is not None and height is not None:
+                # Both width and height provided, maintain aspect ratio by using smallest ratio
+                width_ratio = width / original_width
+                height_ratio = height / original_height
+                ratio = min(width_ratio, height_ratio)
+                width = int(original_width * ratio)
+                height = int(original_height * ratio)
+        else:
+            # Use provided dimensions or original if not provided
+            width = width if width is not None else original_width
+            height = height if height is not None else original_height
         
-        y += line_height + 5  # 5px line spacing
+        # Perform resizing
+        return img.resize((width, height), Image.LANCZOS)
     
-    # Save to a byte buffer
-    buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=85)
-    buffer.seek(0)
-    
-    # Convert to base64
-    return f"data:image/jpeg;base64,{base64.b64encode(buffer.getvalue()).decode('utf-8')}"
+    except Exception as e:
+        logger.error(f"Error resizing image: {str(e)}")
+        return None
 
-def wrap_text(text: str, font: Any, max_width: int) -> List[str]:
+def add_watermark(image: Union[Image.Image, bytes], 
+                 text: str, 
+                 opacity: float = 0.5,
+                 position: str = "center") -> Optional[Image.Image]:
     """
-    Wrap text to fit within a given width.
+    Add a text watermark to an image.
     
     Args:
-        text: Text to wrap
-        font: Font to use for measuring text width
-        max_width: Maximum width in pixels
+        image: PIL Image object or bytes of image data
+        text: Watermark text
+        opacity: Opacity of the watermark (0-1)
+        position: Position of the watermark ("center", "top", "bottom", "top-left", etc.)
         
     Returns:
-        List of wrapped text lines
+        PIL Image with watermark or None if process fails
     """
-    words = text.split(' ')
-    wrapped_lines = []
-    current_line = []
-    
-    for word in words:
-        # Add the word to the current line
-        current_line.append(word)
+    try:
+        # Convert to PIL Image if needed
+        img = image if isinstance(image, Image.Image) else bytes_to_image(image)
+        if img is None:
+            return None
         
-        # Check if the current line is too wide
-        line = ' '.join(current_line)
+        # Create a transparent overlay for the watermark
+        watermark = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(watermark)
         
-        # Get line width using either getbbox or approximation
+        # Try to get a font, use default if not available
         try:
-            # For newer PIL versions
-            bbox = font.getbbox(line)
-            line_width = bbox[2] - bbox[0]
-        except AttributeError:
-            # Fallback approximation
-            try:
-                # For older PIL versions that might have getsize
-                try:
-                    line_width = font.getsize(line)[0]
-                except:
-                    # Last resort: approximate based on character count
-                    line_width = len(line) * (font.size // 2)
-            except:
-                # Very basic approximation if all else fails
-                line_width = len(line) * 6
+            font = ImageFont.truetype("arial.ttf", 36)
+        except IOError:
+            font = ImageFont.load_default()
         
-        if line_width > max_width:
-            # Remove the last word
-            if len(current_line) > 1:
-                last_word = current_line.pop()
-                wrapped_lines.append(' '.join(current_line))
-                current_line = [last_word]
-            else:
-                # If a single word is longer than max_width, we have to keep it on its own line
-                wrapped_lines.append(line)
-                current_line = []
+        # Calculate text size and position
+        text_width, text_height = draw.textsize(text, font=font)
+        
+        # Calculate position based on specified parameter
+        if position == "center":
+            x = (img.width - text_width) // 2
+            y = (img.height - text_height) // 2
+        elif position == "top":
+            x = (img.width - text_width) // 2
+            y = 10
+        elif position == "bottom":
+            x = (img.width - text_width) // 2
+            y = img.height - text_height - 10
+        elif position == "top-left":
+            x = 10
+            y = 10
+        elif position == "top-right":
+            x = img.width - text_width - 10
+            y = 10
+        elif position == "bottom-left":
+            x = 10
+            y = img.height - text_height - 10
+        elif position == "bottom-right":
+            x = img.width - text_width - 10
+            y = img.height - text_height - 10
+        else:
+            # Default to center
+            x = (img.width - text_width) // 2
+            y = (img.height - text_height) // 2
+        
+        # Draw text on the overlay with shadow for better visibility
+        draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, int(255 * opacity)))
+        draw.text((x, y), text, font=font, fill=(255, 255, 255, int(255 * opacity)))
+        
+        # Convert the original image to RGBA if it's not already
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        
+        # Composite the watermark onto the original image
+        result = Image.alpha_composite(img, watermark)
+        
+        return result
     
-    # Add the last line if there's anything left
-    if current_line:
-        wrapped_lines.append(' '.join(current_line))
+    except Exception as e:
+        logger.error(f"Error adding watermark: {str(e)}")
+        return None
+
+def crop_image(image: Union[Image.Image, bytes], 
+             left: int, top: int, right: int, bottom: int) -> Optional[Image.Image]:
+    """
+    Crop an image to specified dimensions.
     
-    return wrapped_lines
+    Args:
+        image: PIL Image object or bytes of image data
+        left: Left coordinate for cropping
+        top: Top coordinate for cropping
+        right: Right coordinate for cropping
+        bottom: Bottom coordinate for cropping
+        
+    Returns:
+        Cropped PIL Image or None if cropping fails
+    """
+    try:
+        # Convert to PIL Image if needed
+        img = image if isinstance(image, Image.Image) else bytes_to_image(image)
+        if img is None:
+            return None
+        
+        # Ensure coordinates are within image bounds
+        width, height = img.size
+        left = max(0, min(left, width - 1))
+        top = max(0, min(top, height - 1))
+        right = max(left + 1, min(right, width))
+        bottom = max(top + 1, min(bottom, height))
+        
+        # Crop the image
+        return img.crop((left, top, right, bottom))
+    
+    except Exception as e:
+        logger.error(f"Error cropping image: {str(e)}")
+        return None
+
+def rotate_image(image: Union[Image.Image, bytes], 
+               angle: float, 
+               expand: bool = True) -> Optional[Image.Image]:
+    """
+    Rotate an image by the specified angle.
+    
+    Args:
+        image: PIL Image object or bytes of image data
+        angle: Rotation angle in degrees (counter-clockwise)
+        expand: Whether to expand the image to fit the rotated content
+        
+    Returns:
+        Rotated PIL Image or None if rotation fails
+    """
+    try:
+        # Convert to PIL Image if needed
+        img = image if isinstance(image, Image.Image) else bytes_to_image(image)
+        if img is None:
+            return None
+        
+        # Rotate the image
+        return img.rotate(angle, expand=expand, resample=Image.BICUBIC)
+    
+    except Exception as e:
+        logger.error(f"Error rotating image: {str(e)}")
+        return None
+
+def create_thumbnail(file_path: str, 
+                   width: int = 200, 
+                   format: str = "JPEG") -> Optional[str]:
+    """
+    Create a thumbnail from an image file.
+    
+    Args:
+        file_path: Path to the image file
+        width: Width of the thumbnail
+        format: Image format for the thumbnail
+        
+    Returns:
+        Base64-encoded string of the thumbnail or None if creation fails
+    """
+    try:
+        # Open the image file
+        with Image.open(file_path) as img:
+            # Create a copy to avoid modifying the original
+            img_copy = img.copy()
+            
+            # Resize the image
+            thumbnail = resize_image(img_copy, width=width)
+            
+            # Convert to base64
+            if thumbnail:
+                return image_to_base64(thumbnail, format=format)
+            
+            return None
+    
+    except Exception as e:
+        logger.error(f"Error creating thumbnail: {str(e)}")
+        return None

@@ -1,187 +1,186 @@
 """
-Analytics module for the Knowledge Base.
-Handles statistics and analytics functions.
+Analytics module for Book Knowledge AI.
+Provides analytics for knowledge base content.
 """
 
-import sqlite3
-from utils.logger import get_logger
+import re
+import string
+from collections import Counter
+from typing import List, Dict, Any, Optional, Tuple, Set
 
-# Get logger
+from utils.logger import get_logger
+from knowledge_base.config import (
+    DEFAULT_KEYWORD_MIN_COUNT, DEFAULT_KEYWORD_MAX_WORDS,
+    DEFAULT_STOPWORDS_LANGUAGE
+)
+
+# Get a logger for this module
 logger = get_logger(__name__)
 
-class KnowledgeBaseAnalytics:
+# Common English stopwords
+STOPWORDS = {
+    "english": set([
+        "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", 
+        "any", "are", "aren't", "as", "at", "be", "because", "been", "before", "being", 
+        "below", "between", "both", "but", "by", "can't", "cannot", "could", "couldn't", 
+        "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during", 
+        "each", "few", "for", "from", "further", "had", "hadn't", "has", "hasn't", "have", 
+        "haven't", "having", "he", "he'd", "he'll", "he's", "her", "here", "here's", "hers", 
+        "herself", "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", 
+        "if", "in", "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", 
+        "most", "mustn't", "my", "myself", "no", "nor", "not", "of", "off", "on", "once", 
+        "only", "or", "other", "ought", "our", "ours", "ourselves", "out", "over", "own", 
+        "same", "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", "so", 
+        "some", "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves", 
+        "then", "there", "there's", "these", "they", "they'd", "they'll", "they're", "they've", 
+        "this", "those", "through", "to", "too", "under", "until", "up", "very", "was", "wasn't", 
+        "we", "we'd", "we'll", "we're", "we've", "were", "weren't", "what", "what's", "when", 
+        "when's", "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", 
+        "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", 
+        "your", "yours", "yourself", "yourselves"
+    ])
+}
+
+def extract_keywords(
+    text: str,
+    min_count: int = DEFAULT_KEYWORD_MIN_COUNT,
+    max_words: int = DEFAULT_KEYWORD_MAX_WORDS,
+    language: str = DEFAULT_STOPWORDS_LANGUAGE,
+    custom_stopwords: Optional[Set[str]] = None
+) -> Dict[str, int]:
     """
-    Provides analytics and statistics about the knowledge base.
+    Extract keywords from text.
+    
+    Args:
+        text: Text to analyze
+        min_count: Minimum count for a keyword to be included
+        max_words: Maximum words in a keyword phrase
+        language: Language of stopwords to use
+        custom_stopwords: Additional stopwords to exclude
+        
+    Returns:
+        Dictionary of keywords and their counts
     """
-    def __init__(self, vector_store, db_path="book_manager.db"):
-        """
-        Initialize the analytics engine.
-        
-        Args:
-            vector_store: The VectorStore instance
-            db_path: Path to the SQLite database
-        """
-        self.vector_store = vector_store
-        self.db_path = db_path
+    if not text:
+        return {}
     
-    def get_indexed_book_count(self):
-        """
-        Get the number of books in the knowledge base.
-        
-        Returns:
-            Count of indexed books
-        """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT COUNT(*) FROM indexed_books")
-            count = cursor.fetchone()[0]
-            
-            conn.close()
-            
-            logger.debug(f"Found {count} indexed books")
-            return count
-            
-        except Exception as e:
-            logger.error(f"Error getting indexed book count: {str(e)}")
-            return 0
+    # Get stopwords for the specified language
+    stopwords = STOPWORDS.get(language.lower(), set())
     
-    def get_indexed_book_ids(self):
-        """
-        Get the IDs of all books in the knowledge base.
-        
-        Returns:
-            List of book IDs
-        """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT book_id FROM indexed_books")
-            book_ids = [row[0] for row in cursor.fetchall()]
-            
-            conn.close()
-            
-            logger.debug(f"Found {len(book_ids)} indexed book IDs")
-            return book_ids
-            
-        except Exception as e:
-            logger.error(f"Error getting indexed book IDs: {str(e)}")
-            return []
+    # Add custom stopwords if provided
+    if custom_stopwords:
+        stopwords.update(custom_stopwords)
     
-    def get_vector_store_stats(self):
-        """
-        Get comprehensive statistics about the vector store.
-        
-        Returns:
-            Dictionary of statistics
-        """
-        try:
-            # Get book information
-            book_ids = self.get_indexed_book_ids()
-            book_count = len(book_ids)
-            
-            # Get vector store statistics
-            vector_stats = self.vector_store.get_stats()
-            document_count = vector_stats.get('document_count', 0)
-            
-            # Embedding dimensions - this should match the model we're using
-            # all-MiniLM-L6-v2 has 384 dimensions
-            embedding_dimensions = 384
-            
-            # Get content types from vector store stats
-            content_types = vector_stats.get('document_types', ['text', 'image_caption'])
-            
-            stats = {
-                'book_count': book_count,
-                'document_count': document_count,
-                'dimensions': embedding_dimensions,
-                'document_types': content_types,
-                'embedding_model': self.vector_store.embedding_function.model_name,
-                # Add text chunking stats if needed
-                'chunk_size': 1000,  # Default or retrieve from config
-                'chunk_overlap': 200,  # Default or retrieve from config
-            }
-            
-            logger.info(f"Retrieved knowledge base stats: books={book_count}, documents={document_count}")
-            return stats
-            
-        except Exception as e:
-            logger.error(f"Error getting vector store stats: {str(e)}")
-            # Return basic info if there's an error
-            return {
-                'book_count': len(self.get_indexed_book_ids()),
-                'document_count': 0,
-                'dimensions': 384,
-                'document_types': ['text', 'image_caption'],
-                'embedding_model': 'all-MiniLM-L6-v2',
-                'error': str(e)
-            }
+    # Clean and normalize text
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', ' ', text)  # Replace punctuation with spaces
+    text = re.sub(r'\s+', ' ', text)      # Replace multiple spaces with a single space
     
-    def get_document_distribution_by_book(self):
-        """
-        Get distribution of documents across books.
-        
-        Returns:
-            Dictionary mapping book IDs to document counts
-        """
-        try:
-            # This would typically query the vector store by book ID
-            # For now, we'll estimate based on metadata filters
-            
-            distribution = {}
-            book_ids = self.get_indexed_book_ids()
-            
-            for book_id in book_ids:
-                # In a real implementation, we would count documents with this book_id
-                # For now, use a placeholder estimate
-                distribution[str(book_id)] = 0  # Placeholder
-                
-            # Get document count from the vector store
-            total_docs = self.vector_store.count()
-            
-            # Distribute documents proportionally if we have books
-            if book_ids and total_docs > 0:
-                avg_per_book = total_docs / len(book_ids)
-                for book_id in book_ids:
-                    # Add some variance for a more realistic distribution
-                    distribution[str(book_id)] = int(avg_per_book)
-            
-            logger.debug(f"Generated document distribution for {len(book_ids)} books")
-            return distribution
-            
-        except Exception as e:
-            logger.error(f"Error getting document distribution: {str(e)}")
-            return {}
+    # Split into words
+    words = text.split()
     
-    def get_content_type_distribution(self):
-        """
-        Get distribution of content types.
+    # Remove stopwords and short words
+    words = [word for word in words if word not in stopwords and len(word) > 2]
+    
+    # Count single words
+    word_counts = Counter(words)
+    
+    # Extract multi-word phrases if max_words > 1
+    phrase_counts = {}
+    if max_words > 1:
+        for n in range(2, min(max_words + 1, len(words))):
+            for i in range(len(words) - n + 1):
+                phrase = " ".join(words[i:i+n])
+                if phrase not in phrase_counts:
+                    phrase_counts[phrase] = 0
+                phrase_counts[phrase] += 1
+    
+    # Combine single words and phrases
+    all_counts = {**word_counts, **phrase_counts}
+    
+    # Filter by minimum count
+    keywords = {k: v for k, v in all_counts.items() if v >= min_count}
+    
+    return keywords
+
+def get_word_frequencies(
+    text: str,
+    language: str = DEFAULT_STOPWORDS_LANGUAGE,
+    custom_stopwords: Optional[Set[str]] = None,
+    min_length: int = 3
+) -> Dict[str, int]:
+    """
+    Get word frequencies from text.
+    
+    Args:
+        text: Text to analyze
+        language: Language of stopwords to use
+        custom_stopwords: Additional stopwords to exclude
+        min_length: Minimum word length to include
         
-        Returns:
-            Dictionary mapping content types to counts
-        """
-        try:
-            # This would typically query the vector store grouping by content type
-            # For now, we'll estimate based on typical distributions
-            
-            total_docs = self.vector_store.count()
-            
-            # Default distribution if we can't get more precise data
-            distribution = {
-                'text': int(total_docs * 0.8),  # 80% text
-                'image_caption': int(total_docs * 0.15),  # 15% image captions
-                'table_content': total_docs - int(total_docs * 0.8) - int(total_docs * 0.15)  # Remainder
-            }
-            
-            logger.debug(f"Generated content type distribution for {total_docs} documents")
-            return distribution
-            
-        except Exception as e:
-            logger.error(f"Error getting content type distribution: {str(e)}")
-            return {
-                'text': 0,
-                'image_caption': 0,
-                'table_content': 0
-            }
+    Returns:
+        Dictionary of words and their frequencies
+    """
+    if not text:
+        return {}
+    
+    # Get stopwords for the specified language
+    stopwords = STOPWORDS.get(language.lower(), set())
+    
+    # Add custom stopwords if provided
+    if custom_stopwords:
+        stopwords.update(custom_stopwords)
+    
+    # Clean and normalize text
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', ' ', text)  # Replace punctuation with spaces
+    text = re.sub(r'\s+', ' ', text)      # Replace multiple spaces with a single space
+    
+    # Split into words
+    words = text.split()
+    
+    # Remove stopwords and short words
+    words = [word for word in words if word not in stopwords and len(word) >= min_length]
+    
+    # Count words
+    word_counts = Counter(words)
+    
+    return dict(word_counts)
+
+def compute_document_statistics(document: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Compute statistics for a document.
+    
+    Args:
+        document: Document to analyze
+        
+    Returns:
+        Dictionary of document statistics
+    """
+    stats = {}
+    
+    # Check if document has text
+    if not document or "text" not in document:
+        return stats
+    
+    text = document["text"]
+    
+    # Basic statistics
+    stats["char_count"] = len(text)
+    stats["word_count"] = len(text.split())
+    stats["line_count"] = text.count("\n") + 1
+    stats["paragraph_count"] = text.count("\n\n") + 1
+    
+    # Word frequencies
+    word_frequencies = get_word_frequencies(text)
+    stats["word_frequencies"] = word_frequencies
+    
+    # Keywords
+    keywords = extract_keywords(text)
+    stats["keywords"] = keywords
+    
+    # Most common words
+    most_common = dict(Counter(word_frequencies).most_common(20))
+    stats["most_common_words"] = most_common
+    
+    return stats

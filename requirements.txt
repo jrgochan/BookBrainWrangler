@@ -48,3 +48,11 @@ faiss-cpu
 nltk
 plotly
 faiss-cpu
+chromadb
+langchain
+langchain-community
+langchain-text-splitters
+pdf2image
+pypdf2
+pytesseract
+streamlit

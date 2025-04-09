@@ -1,204 +1,295 @@
 """
-UI helper functions for the application.
-Contains common UI utilities used across multiple pages.
+UI helper functions for the Book Knowledge AI application.
+Provides common UI components and utilities.
 """
 
-import streamlit as st
+import os
+import io
 import time
-from typing import Union, Callable, Optional, Dict, Any, Literal
+import base64
+import tempfile
+from typing import Dict, List, Any, Optional, Union, Callable, Tuple
 
-from utils.logger import get_logger
+import streamlit as st
 
-# Get a logger for this module
-logger = get_logger(__name__)
-
-def set_page_config(title: str, icon: str, layout: str, initial_sidebar_state: str):
+# Page utilities
+def create_page_header(title: str, description: str = None, icon: str = None):
     """
-    Set the page configuration for Streamlit.
+    Create a page header with title, description, and optional icon.
     
     Args:
-        title: The page title
-        icon: The page icon (emoji or URL)
-        layout: Page layout ("wide" or "centered")
-        initial_sidebar_state: Initial sidebar state ("expanded" or "collapsed")
+        title: Page title
+        description: Optional page description
+        icon: Optional icon name or emoji
     """
-    try:
-        st.set_page_config(
-            page_title=title,
-            page_icon=icon,
-            layout=layout,
-            initial_sidebar_state=initial_sidebar_state,
-            menu_items={
-                'About': f"""
-                # {title}
-                An interactive document management and knowledge extraction application.
-                """
-            }
-        )
-        logger.debug(f"Page config set: title='{title}', layout='{layout}', sidebar='{initial_sidebar_state}'")
-    except Exception as e:
-        # This might happen if set_page_config is called twice
-        logger.debug(f"Could not set page config: {str(e)}")
+    if icon:
+        st.markdown(f"# {icon} {title}")
+    else:
+        st.title(title)
+    
+    if description:
+        st.markdown(description)
+    
+    st.markdown("---")
 
-def show_progress_bar(message: str, progress_func: Callable, complete_message: str = "Complete!"):
+# Icon utilities
+def get_icon(name: str) -> str:
     """
-    Show a progress bar with a message and completion message.
+    Get an icon by name.
     
     Args:
-        message: Message to display during progress
-        progress_func: Function that performs the work and yields progress (0.0 to 1.0)
-        complete_message: Message to display when complete
-    """
-    # Create a progress bar
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # Display initial message
-    status_text.text(message)
-    
-    try:
-        # Call the progress function and update the progress bar
-        for progress in progress_func():
-            # Ensure progress is between 0 and 1
-            progress = max(0, min(1, progress))
-            progress_bar.progress(progress)
-            
-            # Update status text with percentage
-            percentage = int(progress * 100)
-            status_text.text(f"{message} ({percentage}%)")
-            
-            # Small delay for visual effect
-            time.sleep(0.01)
-        
-        # Complete
-        progress_bar.progress(1.0)
-        status_text.text(complete_message)
-        
-    except Exception as e:
-        # Error
-        status_text.text(f"Error: {str(e)}")
-        logger.error(f"Progress bar error: {str(e)}")
-        raise
-
-def create_download_link(data: bytes, filename: str, link_text: str = "Download") -> str:
-    """
-    Create a download link for file data.
-    
-    Args:
-        data: File data as bytes
-        filename: Name of the file to download
-        link_text: Text to display for the link
+        name: Icon name
         
     Returns:
-        HTML string with download link
+        Icon string (emoji)
     """
-    import base64
+    icons = {
+        "home": "🏠",
+        "book": "📚",
+        "document": "📄",
+        "knowledge": "🧠",
+        "search": "🔍",
+        "settings": "⚙️",
+        "info": "ℹ️",
+        "success": "✅",
+        "warning": "⚠️",
+        "error": "❌",
+        "chat": "💬",
+        "user": "👤",
+        "assistant": "🤖",
+        "upload": "📤",
+        "download": "📥",
+        "chart": "📊",
+        "edit": "✏️",
+        "delete": "🗑️",
+        "save": "💾",
+        "refresh": "🔄",
+        "link": "🔗",
+        "time": "⏱️",
+        "image": "🖼️",
+        "gear": "⚙️",
+        "cloud": "☁️",
+        "light": "💡",
+        "database": "🗃️",
+        "analyze": "📈",
+        "magic": "✨",
+        "folder": "📁",
+        "file": "📄",
+        "loading": "⏳"
+    }
     
-    b64 = base64.b64encode(data).decode()
-    href = f'<a href="data:application/octet-stream;base64,{b64}" download="{filename}">{link_text}</a>'
-    return href
+    return icons.get(name.lower(), "")
 
-def render_file_upload_area(label: str, file_types: Optional[list] = None, accept_multiple_files: bool = False):
+# Notification utilities
+def show_info(message: str):
     """
-    Render a file upload area with a consistent style.
+    Show an information message.
     
     Args:
-        label: Label for the upload area
-        file_types: List of allowed file types (e.g., ["pdf", "docx"])
-        accept_multiple_files: Whether to accept multiple files
-        
-    Returns:
-        Uploaded file(s) from st.file_uploader
+        message: Message text
     """
-    # Create a bordered container with custom styling
-    upload_container = st.container()
-    
-    with upload_container:
-        st.markdown("""
-        <style>
-        .upload-container {
-            border: 2px dashed #aaa;
-            border-radius: 5px;
-            padding: 20px;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-        </style>
-        
-        <div class="upload-container">
-            <p>Drag and drop files here, or click to select</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        return st.file_uploader(
-            label,
-            type=file_types,
-            accept_multiple_files=accept_multiple_files,
-            label_visibility="collapsed"
-        )
+    st.info(message)
 
-def show_notification(message: str, type: str = "info", duration: int = 3):
+def show_success(message: str):
     """
-    Show a temporary notification message.
+    Show a success message.
     
     Args:
-        message: Message to display
-        type: Type of notification ("info", "success", "warning", "error")
-        duration: Duration in seconds to display the message
+        message: Message text
+    """
+    st.success(message)
+
+def show_warning(message: str):
+    """
+    Show a warning message.
+    
+    Args:
+        message: Message text
+    """
+    st.warning(message)
+
+def show_error(message: str):
+    """
+    Show an error message.
+    
+    Args:
+        message: Message text
+    """
+    st.error(message)
+
+def show_notification(message: str, type: str = "info"):
+    """
+    Show a notification message.
+    
+    Args:
+        message: Message text
+        type: Notification type ("info", "success", "warning", "error")
     """
     if type == "info":
-        placeholder = st.info(message)
+        show_info(message)
     elif type == "success":
-        placeholder = st.success(message)
+        show_success(message)
     elif type == "warning":
-        placeholder = st.warning(message)
+        show_warning(message)
     elif type == "error":
-        placeholder = st.error(message)
+        show_error(message)
     else:
-        placeholder = st.info(message)
-    
-    # Auto-dismiss after duration
-    if duration > 0:
-        time.sleep(duration)
-        placeholder.empty()
+        show_info(message)
 
-def render_error_box(title: str, error_message: str, help_text: Optional[str] = None):
+# Loading and progress utilities
+def show_spinner(text: str = "Processing..."):
     """
-    Render a styled error box with title and message.
+    Create a spinner context.
     
     Args:
-        title: Error title
-        error_message: Detailed error message
-        help_text: Optional help text with suggestions
-    """
-    st.error(f"**{title}**\n\n{error_message}")
-    
-    if help_text:
-        st.info(f"**Suggestion:**\n\n{help_text}")
-
-def render_empty_state(message: str, icon: str = "📚"):
-    """
-    Render an empty state message when no data is available.
-    
-    Args:
-        message: Message to display
-        icon: Icon to display before the message
-    """
-    st.markdown(f"""
-    <div style="text-align: center; padding: 50px 0; color: #888;">
-        <div style="font-size: 48px; margin-bottom: 20px;">{icon}</div>
-        <p>{message}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-def render_loading_spinner(text: str = "Loading..."):
-    """
-    Create a loading spinner with text.
-    
-    Args:
-        text: Text to display with the spinner
+        text: Spinner text
         
     Returns:
         Spinner context manager
     """
     return st.spinner(text)
+
+def show_progress(function: Callable, *args, message: str = "Processing...", **kwargs):
+    """
+    Show a progress bar while executing a function.
+    
+    Args:
+        function: Function to execute
+        *args: Function arguments
+        message: Progress message
+        **kwargs: Function keyword arguments
+        
+    Returns:
+        Function result
+    """
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    result = None
+    
+    try:
+        # Show initial status
+        status_text.text(f"{message}... (0%)")
+        progress_bar.progress(0)
+        
+        # Execute function
+        result = function(*args, **kwargs)
+        
+        # Show completion
+        for i in range(10):
+            # Simulate progress
+            progress = min(100, (i + 1) * 10)
+            status_text.text(f"{message}... ({progress}%)")
+            progress_bar.progress(progress)
+            time.sleep(0.05)
+        
+        return result
+    
+    finally:
+        # Clear progress indicators
+        progress_bar.empty()
+        status_text.empty()
+
+def render_loading_spinner(duration: int = 2, message: str = "Loading..."):
+    """
+    Render a loading spinner for a specified duration.
+    
+    Args:
+        duration: Duration in seconds
+        message: Spinner message
+    """
+    with st.spinner(message):
+        time.sleep(duration)
+
+# Empty state utilities
+def render_empty_state(message: str, icon: str = None):
+    """
+    Render an empty state message.
+    
+    Args:
+        message: Empty state message
+        icon: Optional icon name or emoji
+    """
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("---")
+        if icon:
+            icon_str = get_icon(icon)
+            st.markdown(f"<h1 style='text-align: center'>{icon_str}</h1>", unsafe_allow_html=True)
+        
+        st.markdown(f"<h3 style='text-align: center'>{message}</h3>", unsafe_allow_html=True)
+        st.markdown("---")
+
+# File utilities
+def show_file_uploader(label: str, type: List[str] = None, accept_multiple_files: bool = False, key: str = None):
+    """
+    Show a file uploader.
+    
+    Args:
+        label: Uploader label
+        type: Allowed file types (e.g., ["pdf", "docx"])
+        accept_multiple_files: Whether to accept multiple files
+        key: Widget key
+        
+    Returns:
+        Uploaded file or files
+    """
+    return st.file_uploader(label, type=type, accept_multiple_files=accept_multiple_files, key=key)
+
+def save_uploaded_file(uploaded_file, directory: str = "uploads"):
+    """
+    Save an uploaded file to disk.
+    
+    Args:
+        uploaded_file: Uploaded file object
+        directory: Directory to save file
+        
+    Returns:
+        Path to saved file
+    """
+    # Create directory if it doesn't exist
+    os.makedirs(directory, exist_ok=True)
+    
+    # Save the file
+    file_path = os.path.join(directory, uploaded_file.name)
+    
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    return file_path
+
+def get_file_extension(file_path: str) -> str:
+    """
+    Get the file extension of a file.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        File extension (lowercase, without the dot)
+    """
+    _, ext = os.path.splitext(file_path)
+    return ext.lower().lstrip(".")
+
+def create_download_link(content, filename: str, text: str = "Download"):
+    """
+    Create a download link for file content.
+    
+    Args:
+        content: File content (bytes or string)
+        filename: Download filename
+        text: Link text
+        
+    Returns:
+        HTML download link
+    """
+    # Convert string to bytes if needed
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    
+    # Create download link
+    b64 = base64.b64encode(content).decode()
+    href = f'<a href="data:file/txt;base64,{b64}" download="{filename}">{text}</a>'
+    
+    return href

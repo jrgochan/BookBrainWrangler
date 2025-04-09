@@ -1,52 +1,55 @@
 """
-Custom exceptions for the Book Knowledge AI application.
+Exceptions module for Book Knowledge AI application.
 """
 
-class BookKnowledgeError(Exception):
-    """Base exception for all application-specific errors."""
+class BaseError(Exception):
+    """Base exception class for Book Knowledge AI."""
     pass
 
-
-class DatabaseError(BookKnowledgeError):
-    """Exception raised for database-related errors."""
+class DocumentProcessingError(BaseError):
+    """Exception raised for errors in document processing."""
     pass
 
-
-class DocumentProcessingError(BookKnowledgeError):
-    """Exception raised for document processing errors."""
+class DocumentFormatError(DocumentProcessingError):
+    """Exception raised for unsupported document formats."""
     pass
 
-
-class OCRError(DocumentProcessingError):
-    """Exception raised for OCR-related errors."""
+class MetadataExtractionError(DocumentProcessingError):
+    """Exception raised for metadata extraction errors."""
     pass
 
-
-class AIClientError(BookKnowledgeError):
-    """Exception raised for AI client-related errors."""
+class OcrError(DocumentProcessingError):
+    """Exception raised for OCR processing errors."""
     pass
 
-
-class KnowledgeBaseError(BookKnowledgeError):
-    """Exception raised for knowledge base-related errors."""
+class VectorStoreError(BaseError):
+    """Exception raised for vector store operations."""
     pass
 
-
-class ConfigurationError(BookKnowledgeError):
-    """Exception raised for configuration-related errors."""
+class EmbeddingError(VectorStoreError):
+    """Exception raised for embedding operations."""
     pass
 
-
-class UIError(BookKnowledgeError):
-    """Exception raised for UI-related errors."""
+class SearchError(VectorStoreError):
+    """Exception raised for search operations."""
     pass
 
-
-class ValidationError(BookKnowledgeError):
-    """Exception raised for validation errors."""
+class AIError(BaseError):
+    """Exception raised for AI operations."""
     pass
 
+class ModelNotFoundError(AIError):
+    """Exception raised when an AI model is not found."""
+    pass
 
-class PermissionError(BookKnowledgeError):
-    """Exception raised for permission-related errors."""
+class ResponseGenerationError(AIError):
+    """Exception raised when generating a response fails."""
+    pass
+
+class DatabaseError(BaseError):
+    """Exception raised for database operations."""
+    pass
+
+class ConfigurationError(BaseError):
+    """Exception raised for configuration errors."""
     pass

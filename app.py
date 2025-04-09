@@ -4,239 +4,413 @@ A Streamlit-powered book management and knowledge extraction application
 that transforms documents into an interactive, AI-enhanced knowledge base.
 """
 
-import streamlit as st
 import os
-import time
-import platform
-import sys
-from loguru import logger
-from utils.logging_config import configure_logger
+import streamlit as st
+from datetime import datetime
 
-# Apply Streamlit patches before importing streamlit
-from utils.streamlit_patch import apply_patches
-apply_patches()
+from utils.logger import get_logger
+from document_processing import DocumentProcessor
+from knowledge_base import KnowledgeBase
 
-# Configure logger
-logger = configure_logger()
-logger.info(f"Starting Book Knowledge AI application - Python {sys.version} on {platform.system()} {platform.release()}")
+# Initialize logger
+logger = get_logger(__name__)
 
-# Import module classes
-from book_manager.manager import BookManager
-from document_processing import DocumentProcessor  # Using refactored DocumentProcessor
-# Use the new paths with the refactored architecture
-from knowledge_base.vector_store import KnowledgeBase
-from ai.ollama import OllamaClient
-
-# Import pages from the new ui module
-from ui.pages import (
-    render_book_management_page,
-    render_knowledge_base_page,
-    render_chat_with_ai_page,
-    render_knowledge_base_explorer_page,
-    render_word_cloud_generator_page,
-    render_document_heatmap_page,
-    render_settings_page
+# Set page config
+st.set_page_config(
+    page_title="Book Knowledge AI",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Import UI helpers
-from ui.helpers import render_empty_state, show_notification, render_loading_spinner, set_page_config
+# Initialize session state
+def init_session_state():
+    """Initialize session state variables."""
+    if "initialized" not in st.session_state:
+        st.session_state.initialized = True
+        st.session_state.document_processor = DocumentProcessor()
+        st.session_state.knowledge_base = KnowledgeBase()
+        st.session_state.current_page = "home"
+        st.session_state.sidebar_collapsed = False
+        st.session_state.theme = "light"
+        st.session_state.uploaded_files = []
+        st.session_state.processing_results = {}
+        st.session_state.search_results = []
+        st.session_state.selected_document = None
+        st.session_state.ai_model = "default"
+        st.session_state.chat_history = []
+        st.session_state.kb_enabled = True
+        logger.info("Session state initialized")
 
-# Import configuration
-from config.settings import (
-    APP_TITLE, 
-    APP_ICON, 
-    APP_LAYOUT, 
-    INITIAL_SIDEBAR_STATE,
-    APP_MODES
-)
-
-# Initialize the components
-@st.cache_resource
-def initialize_components():
-    """Initialize all major application components."""
-    logger.info("Initializing application components")
-    
-    try:
-        # Create instances of all major components
-        logger.debug("Initializing BookManager")
-        book_manager = BookManager()
-        
-        # Initialize DocumentProcessor
-        logger.debug("Initializing DocumentProcessor")
-        document_processor = DocumentProcessor()
-        
-        logger.debug("Initializing KnowledgeBase")
-        knowledge_base = KnowledgeBase()
-        
-        # Initialize Ollama client with settings from session state if available
-        if 'ollama_settings' in st.session_state and isinstance(st.session_state.ollama_settings, dict):
-            server_url = st.session_state.ollama_settings.get('server_url', 'http://localhost:11434')
-            model = st.session_state.ollama_settings.get('model', 'llama2')
-            logger.debug(f"Initializing OllamaClient with server_url={server_url}, model={model}")
-            ollama_client = OllamaClient(server_url=server_url, model=model)
-        else:
-            logger.debug("Initializing OllamaClient with default settings")
-            ollama_client = OllamaClient()
-        
-        logger.success("All components initialized successfully")
-        return book_manager, document_processor, knowledge_base, ollama_client
-    except Exception as e:
-        logger.error(f"Failed to initialize components: {str(e)}")
-        raise
-
-def initialize_session_state():
-    """Initialize session state variables if they don't exist."""
-    logger.info("Initializing session state")
-    
-    # Track what we're initializing
-    initialized_items = []
-    
-    # App mode state
-    if 'app_mode' not in st.session_state:
-        st.session_state.app_mode = APP_MODES[0]
-        initialized_items.append("app_mode")
-    
-    # Thumbnail cache
-    if 'thumbnail_cache' not in st.session_state:
-        st.session_state.thumbnail_cache = {}
-        initialized_items.append("thumbnail_cache")
-    
-    # OCR settings
-    if 'ocr_settings' not in st.session_state:
-        # Detect the operating system
-        import platform
-        system = platform.system().lower()
-        
-        # Set a default Tesseract path based on the platform
-        default_tesseract_path = ""
-        if system == 'windows':
-            default_tesseract_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-        elif system == 'linux':
-            default_tesseract_path = '/usr/bin/tesseract'
-        elif system == 'darwin':  # macOS
-            default_tesseract_path = '/usr/local/bin/tesseract'
-            
-        # Initialize OCR settings
-        st.session_state.ocr_settings = {
-            'show_current_image': True,
-            'show_extracted_text': True,
-            'confidence_threshold': 70.0,  # percentage
-            'display_interval': 5,  # show every 5th page
-            'ocr_engine': 'pytesseract',  # Default OCR engine
-            'languages': ['en'],  # Default language for EasyOCR
-            'tesseract_path': default_tesseract_path  # Platform-specific default path
-        }
-        initialized_items.append("ocr_settings")
-    
-    # Ollama settings
-    if 'ollama_settings' not in st.session_state:
-        st.session_state.ollama_settings = {
-            'model': os.environ.get("OLLAMA_MODEL", "llama2"),
-            'server_url': os.environ.get("OLLAMA_HOST", "http://localhost:11434"),
-            'temperature': 0.7,
-            'context_window': 4096,
-        }
-        initialized_items.append("ollama_settings")
-        
-    if initialized_items:
-        logger.debug(f"Initialized session state variables: {', '.join(initialized_items)}")
-    else:
-        logger.debug("Session state already initialized")
-
-def render_sidebar(app_modes):
-    """Render the sidebar for application navigation."""
-    logger.debug("Rendering sidebar navigation")
-    
+# Render sidebar
+def render_sidebar():
+    """Render the application sidebar."""
     with st.sidebar:
-        st.title(APP_TITLE)
+        st.title("Book Knowledge AI")
+        st.markdown("---")
         
         # Navigation
-        st.subheader("Navigation")
-        for mode in app_modes:
-            if st.button(mode, key=f"nav_{mode}", use_container_width=True, 
-                        help=f"Go to {mode} page",
-                        type="primary" if st.session_state.app_mode == mode else "secondary"):
-                previous_mode = st.session_state.app_mode
-                st.session_state.app_mode = mode
-                logger.info(f"Navigation: Changed from '{previous_mode}' to '{mode}' mode")
-                st.rerun()
+        st.header("Navigation")
+        if st.button("📚 Home", use_container_width=True):
+            st.session_state.current_page = "home"
+            st.rerun()
         
-        # Display app information
-        st.sidebar.divider()
-        st.sidebar.info("""
-        ### About
-        Book Knowledge AI transforms your documents into an interactive, searchable knowledge base.
+        if st.button("📄 Book Management", use_container_width=True):
+            st.session_state.current_page = "book_management"
+            st.rerun()
         
-        Upload books, documents, and research papers to extract knowledge and chat with your documents using AI.
-        """)
+        if st.button("🔍 Knowledge Base", use_container_width=True):
+            st.session_state.current_page = "knowledge_base"
+            st.rerun()
         
-        # Version information
-        app_version = "1.0.0"  # This could be stored in a config file or constants module
-        st.sidebar.caption(f"v{app_version} | Built with Streamlit")
-        logger.debug(f"App version: {app_version}")
-    
-    return st.session_state.app_mode
+        if st.button("💬 Chat with AI", use_container_width=True):
+            st.session_state.current_page = "chat"
+            st.rerun()
+        
+        if st.button("⚙️ Settings", use_container_width=True):
+            st.session_state.current_page = "settings"
+            st.rerun()
+        
+        st.markdown("---")
+        
+        # Status
+        st.header("Status")
+        kb_stats = st.session_state.knowledge_base.get_stats()
+        st.info(f"Documents in KB: {kb_stats.get('document_count', 0)}")
+        st.info(f"Total Chunks: {kb_stats.get('chunk_count', 0)}")
+        
+        # Footer
+        st.markdown("---")
+        st.markdown("📚 Book Knowledge AI")
+        st.markdown(f"© {datetime.now().year}")
 
-def main():
-    """Main application entry point."""
-    start_time = time.time()
-    logger.info("Starting main application loop")
+# Render home page
+def render_home_page():
+    """Render the home page."""
+    st.title("Book Knowledge AI")
+    st.subheader("Transform your books into an interactive AI knowledge base.")
     
-    try:
-        # Set the page configuration
-        set_page_config(APP_TITLE, APP_ICON, APP_LAYOUT, INITIAL_SIDEBAR_STATE)
+    st.markdown("""
+    ## Welcome to Book Knowledge AI!
+    
+    This application allows you to:
+    
+    - **Upload and process** books and documents
+    - **Extract knowledge** from your document collection
+    - **Search and explore** your knowledge base
+    - **Chat with AI** about your documents
+    
+    Get started by uploading documents in the Book Management section.
+    """)
+    
+    # Quick access buttons
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📄 Manage Documents", use_container_width=True):
+            st.session_state.current_page = "book_management"
+            st.rerun()
+    
+    with col2:
+        if st.button("🔍 Explore Knowledge Base", use_container_width=True):
+            st.session_state.current_page = "knowledge_base"
+            st.rerun()
+    
+    with col3:
+        if st.button("💬 Chat with AI", use_container_width=True):
+            st.session_state.current_page = "chat"
+            st.rerun()
+
+# Render book management page
+def render_book_management_page():
+    """Render the book management page."""
+    st.title("Book Management")
+    st.subheader("Upload, view, and manage your documents")
+    
+    # Upload new document
+    st.header("Upload New Document")
+    uploaded_file = st.file_uploader(
+        "Upload a PDF or DOCX file",
+        type=["pdf", "docx"],
+        key="book_upload"
+    )
+    
+    if uploaded_file:
+        st.session_state.uploaded_files.append(uploaded_file)
         
-        # Initialize application state
-        initialize_session_state()
-        
-        # Initialize components
-        book_manager, document_processor, knowledge_base, ollama_client = initialize_components()
-        
-        # Render sidebar and get selected mode
-        selected_mode = render_sidebar(APP_MODES)
-        
-        # Log current mode
-        logger.info(f"Rendering page: {selected_mode}")
-        
-        # Render the selected page
-        try:
-            if selected_mode == "Book Management":
-                render_book_management_page(book_manager, document_processor, knowledge_base)
-            
-            elif selected_mode == "Knowledge Base":
-                render_knowledge_base_page(book_manager, knowledge_base)
-            
-            elif selected_mode == "Chat with AI":
-                render_chat_with_ai_page(ollama_client, knowledge_base)
-            
-            elif selected_mode == "Knowledge Base Explorer":
-                render_knowledge_base_explorer_page(knowledge_base)
-            
-            elif selected_mode == "Word Cloud Generator":
-                render_word_cloud_generator_page(book_manager)
+        # Process document
+        with st.spinner("Processing document..."):
+            try:
+                # Save uploaded file
+                file_path = st.session_state.document_processor.save_uploaded_file(uploaded_file)
                 
-            elif selected_mode == "Document Heatmap":
-                render_document_heatmap_page()
+                # Process document
+                result = st.session_state.document_processor.process_document(
+                    file_path,
+                    include_images=True,
+                    ocr_enabled=False
+                )
                 
-            elif selected_mode == "Settings":
-                render_settings_page(ollama_client)
+                # Add to processing results
+                st.session_state.processing_results[file_path] = result
                 
+                # Add to knowledge base
+                doc_id = st.session_state.knowledge_base.generate_id()
+                st.session_state.knowledge_base.add_document(
+                    doc_id,
+                    result["text"],
+                    result["metadata"]
+                )
+                
+                st.success(f"Document '{uploaded_file.name}' processed and added to knowledge base.")
+                
+                # Display document preview
+                st.subheader("Document Preview")
+                st.json(result["metadata"])
+                
+                with st.expander("Text Preview"):
+                    st.text(result["text"][:1000] + "...")
+                
+            except Exception as e:
+                st.error(f"Error processing document: {str(e)}")
+                logger.error(f"Error processing document: {str(e)}")
+    
+    # List existing documents
+    st.header("Existing Documents")
+    documents = st.session_state.knowledge_base.list_documents()
+    
+    if not documents:
+        st.info("No documents in the knowledge base yet. Upload a document to get started.")
+    else:
+        for doc in documents:
+            col1, col2, col3 = st.columns([3, 1, 1])
+            
+            with col1:
+                doc_title = doc.get("metadata", {}).get("title", doc["id"])
+                st.markdown(f"**{doc_title}**")
+            
+            with col2:
+                if st.button("View", key=f"view_{doc['id']}"):
+                    st.session_state.selected_document = doc["id"]
+                    st.rerun()
+            
+            with col3:
+                if st.button("Delete", key=f"delete_{doc['id']}"):
+                    st.session_state.knowledge_base.delete_document(doc["id"])
+                    st.success(f"Document '{doc_title}' deleted from knowledge base.")
+                    st.rerun()
+    
+    # Display selected document
+    if st.session_state.selected_document:
+        st.header("Document Details")
+        
+        document = st.session_state.knowledge_base.get_document(st.session_state.selected_document)
+        
+        if document:
+            # Display metadata
+            st.subheader("Metadata")
+            st.json(document["metadata"])
+            
+            # Display text
+            st.subheader("Content")
+            with st.expander("Show full text", expanded=False):
+                st.text(document["text"])
+            
+            # Display chunks
+            st.subheader("Chunks")
+            for i, chunk in enumerate(document["chunks"]):
+                with st.expander(f"Chunk {i+1}", expanded=False):
+                    st.text(chunk)
+        else:
+            st.error("Document not found.")
+
+# Render knowledge base page
+def render_knowledge_base_page():
+    """Render the knowledge base page."""
+    st.title("Knowledge Base")
+    st.subheader("Search and explore your knowledge base")
+    
+    # Search
+    st.header("Search")
+    query = st.text_input("Enter search query")
+    
+    if query:
+        with st.spinner("Searching..."):
+            from knowledge_base.search import search_knowledge_base
+            
+            results = search_knowledge_base(
+                query,
+                st.session_state.knowledge_base
+            )
+            
+            st.session_state.search_results = results
+    
+    # Display search results
+    if hasattr(st.session_state, "search_results") and st.session_state.search_results:
+        st.header(f"Search Results ({len(st.session_state.search_results)})")
+        
+        for i, result in enumerate(st.session_state.search_results):
+            with st.expander(f"Result {i+1} - Score: {result['score']:.2f}", expanded=i==0):
+                st.markdown(f"**Document ID:** {result['metadata']['document_id']}")
+                st.markdown(f"**Text:**")
+                st.text(result["text"])
+    
+    # Knowledge base stats
+    st.header("Knowledge Base Statistics")
+    kb_stats = st.session_state.knowledge_base.get_stats()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("Documents", kb_stats.get("document_count", 0))
+    
+    with col2:
+        st.metric("Chunks", kb_stats.get("chunk_count", 0))
+
+# Render chat page
+def render_chat_page():
+    """Render the chat page."""
+    st.title("Chat with AI")
+    st.subheader("Ask questions about your documents")
+    
+    # Check if knowledge base is empty
+    kb_stats = st.session_state.knowledge_base.get_stats()
+    if kb_stats.get("document_count", 0) == 0:
+        st.warning("Your knowledge base is empty. Please add documents first.")
+        
+        if st.button("Go to Book Management"):
+            st.session_state.current_page = "book_management"
+            st.rerun()
+        
+        return
+    
+    # Initialize chat history
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    
+    # Display chat history
+    for message in st.session_state.chat_history:
+        if message["role"] == "user":
+            st.chat_message("user").write(message["content"])
+        else:
+            st.chat_message("assistant").write(message["content"])
+    
+    # Chat input
+    user_input = st.chat_input("Ask a question about your documents")
+    
+    if user_input:
+        # Add user message to chat history
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Display user message
+        st.chat_message("user").write(user_input)
+        
+        # Get AI response
+        with st.spinner("Thinking..."):
+            # Search knowledge base
+            from knowledge_base.search import search_knowledge_base
+            
+            results = search_knowledge_base(
+                user_input,
+                st.session_state.knowledge_base,
+                limit=5
+            )
+            
+            # Simulate AI response
+            if results:
+                # Use the search results as context
+                context = "\n\n".join([r["text"] for r in results])
+                
+                # Simple response based on results
+                response = f"Based on your documents, I found the following information:\n\n{context[:500]}..."
             else:
-                logger.error(f"Unknown app mode: {selected_mode}")
-                st.error(f"Unknown application mode: {selected_mode}")
-                
-            # Log page render time
-            render_time = time.time() - start_time
-            logger.debug(f"Page {selected_mode} rendered in {render_time:.2f} seconds")
-                
-        except Exception as e:
-            logger.exception(f"Error rendering page {selected_mode}: {str(e)}")
-            st.error(f"An error occurred while rendering the page: {str(e)}")
-            
-    except Exception as e:
-        logger.exception(f"Critical application error: {str(e)}")
-        st.error("A critical error occurred in the application. Please check the logs for details.")
+                response = "I couldn't find any relevant information in your documents. Try a different question or add more documents to your knowledge base."
+        
+        # Add AI response to chat history
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": response
+        })
+        
+        # Display AI response
+        st.chat_message("assistant").write(response)
+        
+        # Rerun to update UI
+        st.rerun()
 
-# Run the application
+# Render settings page
+def render_settings_page():
+    """Render the settings page."""
+    st.title("Settings")
+    st.subheader("Configure application settings")
+    
+    # Knowledge base settings
+    st.header("Knowledge Base Settings")
+    
+    kb_path = st.text_input(
+        "Knowledge Base Path",
+        value=st.session_state.knowledge_base.base_path,
+        disabled=True
+    )
+    
+    kb_collection = st.text_input(
+        "Collection Name",
+        value=st.session_state.knowledge_base.collection_name,
+        disabled=True
+    )
+    
+    # Reset knowledge base
+    st.header("Reset Knowledge Base")
+    st.warning("⚠️ This will delete all documents from your knowledge base. This action cannot be undone.")
+    
+    if st.button("Reset Knowledge Base"):
+        confirm = st.checkbox("I understand that this action cannot be undone")
+        
+        if confirm and st.button("Confirm Reset", key="confirm_reset"):
+            st.session_state.knowledge_base.reset()
+            st.success("Knowledge base has been reset.")
+            st.rerun()
+    
+    # Application theme
+    st.header("Application Theme")
+    theme = st.selectbox(
+        "Select Theme",
+        ["Light", "Dark"],
+        index=0 if st.session_state.theme == "light" else 1
+    )
+    
+    if theme.lower() != st.session_state.theme:
+        st.session_state.theme = theme.lower()
+        st.success(f"Theme changed to {theme}.")
+
+# Main application
+def main():
+    """Main application function."""
+    try:
+        # Initialize session state
+        init_session_state()
+        
+        # Render sidebar
+        render_sidebar()
+        
+        # Render page based on current_page
+        if st.session_state.current_page == "home":
+            render_home_page()
+        elif st.session_state.current_page == "book_management":
+            render_book_management_page()
+        elif st.session_state.current_page == "knowledge_base":
+            render_knowledge_base_page()
+        elif st.session_state.current_page == "chat":
+            render_chat_page()
+        elif st.session_state.current_page == "settings":
+            render_settings_page()
+        
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+        logger.error(f"Application error: {str(e)}")
+
 if __name__ == "__main__":
     main()

@@ -1,191 +1,138 @@
 """
-Search module for the Knowledge Base.
-Handles searching and retrieving documents from the vector database.
+Search module for Book Knowledge AI.
+Handles searching the knowledge base.
 """
 
-from utils.logger import get_logger
+from typing import List, Dict, Any, Optional, Union
+import re
 
-# Get logger
+from utils.logger import get_logger
+from knowledge_base.config import (
+    DEFAULT_SEARCH_LIMIT, DEFAULT_SEARCH_THRESHOLD
+)
+from knowledge_base.vector_store import KnowledgeBase
+
+# Get a logger for this module
 logger = get_logger(__name__)
 
-class VectorSearch:
+def search_knowledge_base(
+    query: str,
+    kb: KnowledgeBase,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    threshold: float = DEFAULT_SEARCH_THRESHOLD,
+    filters: Dict[str, Any] = None
+) -> List[Dict[str, Any]]:
     """
-    Handles search operations against the vector database.
+    Search the knowledge base.
+    
+    Args:
+        query: Search query
+        kb: KnowledgeBase instance
+        limit: Maximum number of results
+        threshold: Minimum score threshold
+        filters: Optional search filters
+        
+    Returns:
+        List of search results
     """
-    def __init__(self, vector_store):
-        """
-        Initialize the search engine.
+    try:
+        # Clean query
+        query = clean_query(query)
         
-        Args:
-            vector_store: The VectorStore instance to use for searching
-        """
-        self.vector_store = vector_store
-    
-    def retrieve_documents(self, query, num_results=5, filter=None):
-        """
-        Retrieve relevant documents for a query.
-        
-        Args:
-            query: The search query
-            num_results: Number of top results to return
-            filter: Dictionary of metadata field/value pairs to filter by
-            
-        Returns:
-            List of documents
-        """
-        try:
-            # Check if the vector store has documents
-            count = self.vector_store.count()
-            if count == 0:
-                logger.warning("Empty vector store, no results can be retrieved")
-                return []
-            
-            # Retrieve documents from the vector store
-            docs = self.vector_store.similarity_search(
-                query=query,
-                k=num_results,
-                filter=filter
-            )
-            
-            logger.info(f"Retrieved {len(docs)} documents for query: {query[:50]}...")
-            return docs
-            
-        except Exception as e:
-            logger.error(f"Error retrieving documents for query '{query}': {str(e)}")
+        # Check if query is valid
+        if not query:
+            logger.warning("Empty query provided for search")
             return []
-    
-    def retrieve_documents_with_scores(self, query, num_results=5, filter=None):
-        """
-        Retrieve relevant documents with similarity scores.
         
-        Args:
-            query: The search query
-            num_results: Number of top results to return
-            filter: Dictionary of metadata field/value pairs to filter by
-            
-        Returns:
-            List of (document, score) tuples
-        """
-        try:
-            # Check if the vector store has documents
-            count = self.vector_store.count()
-            if count == 0:
-                logger.warning("Empty vector store, no results can be retrieved")
-                return []
-            
-            # Retrieve documents from the vector store
-            results = self.vector_store.similarity_search_with_relevance_scores(
-                query=query,
-                k=num_results,
-                filter=filter
-            )
-            
-            logger.info(f"Retrieved {len(results)} scored documents for query: {query[:50]}...")
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error retrieving scored documents for query '{query}': {str(e)}")
-            return []
-    
-    def get_raw_documents_with_query(self, query, num_results=5, filter=None):
-        """
-        Retrieve documents with scores in a structured format for UI display.
+        # Convert filters to vector store where clause if provided
+        where = filters or {}
         
-        Args:
-            query: The search query
-            num_results: Number of top results to return
-            filter: Dictionary of metadata field/value pairs to filter by
-            
-        Returns:
-            List of dictionaries with document data and similarity score
-        """
-        try:
-            # Check if the vector store has documents
-            count = self.vector_store.count()
-            if count == 0:
-                logger.warning("Empty vector store, no results can be retrieved")
-                return []
-            
-            # Retrieve documents from the vector store
-            results = self.vector_store.similarity_search_with_relevance_scores(
-                query=query,
-                k=num_results,
-                filter=filter
-            )
-            
-            if not results:
-                return []
-            
-            # Format the results
-            formatted_results = []
-            
-            for doc, score in results:
-                formatted_results.append({
-                    'similarity': float(score),  # Ensure score is a Python float
-                    'document': {
-                        'page_content': doc.page_content,
-                        'metadata': doc.metadata
-                    }
-                })
-            
-            logger.info(f"Retrieved {len(formatted_results)} raw documents for query: {query[:50]}...")
-            return formatted_results
-            
-        except Exception as e:
-            logger.error(f"Error retrieving raw documents for query '{query}': {str(e)}")
-            return []
-    
-    def retrieve_relevant_context(self, query, num_results=5, filter=None):
-        """
-        Retrieve relevant context as formatted text for a query.
+        # Perform search
+        results = kb.search(query, limit=limit, where=where)
         
-        Args:
-            query: The search query
-            num_results: Number of top results to return
-            filter: Dictionary of metadata field/value pairs to filter by
-            
-        Returns:
-            A string with the combined relevant text passages
-        """
-        try:
-            # Check if the vector store has documents
-            count = self.vector_store.count()
-            if count == 0:
-                logger.warning("Empty vector store, no results can be retrieved")
-                return "No documents found in the knowledge base."
-            
-            # Retrieve documents from the vector store
-            results = self.vector_store.similarity_search_with_relevance_scores(
-                query=query,
-                k=num_results,
-                filter=filter
-            )
-            
-            if not results:
-                return "No relevant documents found for this query."
-            
-            # Format the results into a readable context
-            context_parts = []
-            
-            for i, (doc, score) in enumerate(results):
-                # Extract content and metadata
-                content = doc.page_content
-                metadata = doc.metadata
-                
-                # Format document with source information
-                source_info = f"[Source: {metadata.get('source', 'Unknown')}]"
-                if 'page' in metadata:
-                    source_info += f" [Page: {metadata.get('page', '?')}]"
-                    
-                formatted_doc = f"--- Document {i+1} ({score:.2f} relevance) ---\n{source_info}\n{content}\n"
-                context_parts.append(formatted_doc)
-            
-            # Combine all context parts
-            combined_context = "\n".join(context_parts)
-            
-            logger.info(f"Retrieved formatted context with {len(results)} documents for query: {query[:50]}...")
-            return combined_context
-            
-        except Exception as e:
-            logger.error(f"Error retrieving context for query '{query}': {str(e)}")
-            return f"Error retrieving documents: {str(e)}"
+        # Apply threshold filter
+        results = [r for r in results if r.get("score", 0) >= threshold]
+        
+        logger.info(f"Search for '{query}' returned {len(results)} results")
+        
+        return results
+    
+    except Exception as e:
+        logger.error(f"Error searching knowledge base: {str(e)}")
+        return []
+
+def clean_query(query: str) -> str:
+    """
+    Clean a search query.
+    
+    Args:
+        query: Query to clean
+        
+    Returns:
+        Cleaned query
+    """
+    if not query:
+        return ""
+    
+    # Convert to string if needed
+    query = str(query)
+    
+    # Remove excessive whitespace
+    query = re.sub(r'\s+', ' ', query)
+    
+    # Remove special characters that might cause issues
+    query = re.sub(r'[^\w\s\-\.,;:!?]', '', query)
+    
+    # Trim whitespace
+    query = query.strip()
+    
+    return query
+
+def get_document_by_id(
+    document_id: str,
+    kb: KnowledgeBase
+) -> Optional[Dict[str, Any]]:
+    """
+    Get a document by its ID.
+    
+    Args:
+        document_id: Document ID
+        kb: KnowledgeBase instance
+        
+    Returns:
+        Document data or None if not found
+    """
+    try:
+        return kb.get_document(document_id)
+    except Exception as e:
+        logger.error(f"Error getting document {document_id}: {str(e)}")
+        return None
+
+def format_result_for_display(result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Format a search result for display.
+    
+    Args:
+        result: Search result
+        
+    Returns:
+        Formatted result
+    """
+    # Clone result to avoid modifying the original
+    formatted = result.copy()
+    
+    # Format score as percentage
+    if "score" in formatted:
+        formatted["score_pct"] = f"{formatted['score'] * 100:.1f}%"
+    
+    # Truncate long text fields
+    if "text" in formatted and len(formatted["text"]) > 500:
+        formatted["text_preview"] = formatted["text"][:500] + "..."
+    else:
+        formatted["text_preview"] = formatted.get("text", "")
+    
+    # Ensure metadata is a dictionary
+    if "metadata" not in formatted or not formatted["metadata"]:
+        formatted["metadata"] = {}
+    
+    return formatted
