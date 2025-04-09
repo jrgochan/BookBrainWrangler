@@ -39,3 +39,4 @@ langchain-faiss>=0.0.4 # Pinned, compatible with faiss-cpu
 # Optional - install if needed
 altair
 loguru
+numpy

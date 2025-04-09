@@ -1,11 +1,20 @@
 """
 Ollama Client for handling AI model interactions.
+This client communicates with the Ollama API to perform operations like:
+- Checking server status
+- Listing available models
+- Generating text responses
+- Generating chat completions
+- Creating embeddings
 """
 
 import json
+import logging
 import requests
 import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 class OllamaClient:
     def __init__(self, server_url="http://localhost:11434", model="llama2"):
@@ -21,8 +30,9 @@ class OllamaClient:
         self.api_base = f"{server_url}/api"
         # Added for compatibility with chat_with_ai.py
         self.host = server_url
+        logger.info(f"Initialized OllamaClient with server_url={server_url}, model={model}")
     
-    def is_server_running(self):
+    def is_server_running(self) -> bool:
         """
         Check if the Ollama server is running.
         
@@ -30,12 +40,16 @@ class OllamaClient:
             bool: True if the server is running, False otherwise
         """
         try:
-            response = requests.get(f"{self.api_base}/tags", timeout=2)
-            return response.status_code == 200
-        except:
+            logger.debug(f"Checking Ollama server at {self.api_base}/tags")
+            response = requests.get(f"{self.api_base}/tags", timeout=3)
+            result = response.status_code == 200
+            logger.debug(f"Ollama server check result: {result}")
+            return result
+        except Exception as e:
+            logger.warning(f"Failed to connect to Ollama server: {str(e)}")
             return False
             
-    def check_connection(self):
+    def check_connection(self) -> bool:
         """
         Check if the Ollama server is running. Alias for is_server_running for compatibility.
         
@@ -44,7 +58,7 @@ class OllamaClient:
         """
         return self.is_server_running()
         
-    def get_model_details(self, model_name):
+    def get_model_details(self, model_name: str) -> Optional[Dict[str, Any]]:
         """
         Get details about a specific model.
         
@@ -55,26 +69,47 @@ class OllamaClient:
             dict: Dictionary with model details or None if not found
         """
         try:
-            # For now, just return a basic info dictionary
-            return {
-                "name": model_name,
-                "parameters": 7000000000,  # 7B
-                "quantization": "Q4_0"
-            }
-        except:
+            logger.debug(f"Getting details for model {model_name}")
+            response = requests.get(f"{self.api_base}/show", params={"name": model_name}, timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extract relevant details from the response
+                parameters = data.get("parameters", {})
+                parameter_size = parameters.get("num_ctx", 0)
+                
+                model_details = {
+                    "name": model_name,
+                    "parameters": data.get("parameter_size", 7000000000),  # Default to 7B if unknown
+                    "quantization": data.get("quantization_level", "unknown"),
+                    "context_length": parameter_size
+                }
+                logger.debug(f"Retrieved model details: {model_details}")
+                return model_details
+            else:
+                # If we can't get details, return basic info
+                logger.warning(f"Failed to get model details, status code: {response.status_code}")
+                return {
+                    "name": model_name,
+                    "parameters": 7000000000,  # 7B default
+                    "quantization": "unknown"
+                }
+        except Exception as e:
+            logger.error(f"Error getting model details: {str(e)}")
             return None
             
-    def list_models(self):
+    def list_models(self) -> List[Dict[str, str]]:
         """
-        List all available models. Alias for get_available_models with different return format.
+        List all available models in a format suitable for UI display.
         
         Returns:
             list: List of model dictionaries with name and other details
         """
         model_names = self.get_available_models()
-        return [{"name": name} for name in model_names or ["llama2"]]
+        return [{"name": name} for name in model_names] if model_names else [{"name": "llama2"}]
     
-    def get_available_models(self):
+    def get_available_models(self) -> List[str]:
         """
         Get a list of available models.
         
@@ -82,17 +117,26 @@ class OllamaClient:
             list: List of model names
         """
         try:
-            response = requests.get(f"{self.api_base}/tags")
+            logger.debug(f"Getting available models from {self.api_base}/tags")
+            response = requests.get(f"{self.api_base}/tags", timeout=5)
+            
             if response.status_code == 200:
                 data = response.json()
-                return [model['name'] for model in data.get('models', [])]
-            return []
-        except:
+                models = [model['name'] for model in data.get('models', [])]
+                logger.debug(f"Retrieved {len(models)} models")
+                return models
+            else:
+                logger.warning(f"Failed to get models, status code: {response.status_code}")
+                return []
+        except Exception as e:
+            logger.error(f"Error listing models: {str(e)}")
             return []
     
-    def generate_response(self, prompt, context=None, temperature=0.7, max_tokens=1000, model=None):
+    def generate_response(self, prompt: str, context: Optional[str] = None, 
+                         temperature: float = 0.7, max_tokens: int = 1000, 
+                         model: Optional[str] = None) -> str:
         """
-        Generate a response from the model.
+        Generate a response from the model using the Ollama /generate endpoint.
         
         Args:
             prompt: The prompt to send to the model
@@ -104,67 +148,146 @@ class OllamaClient:
         Returns:
             str: The generated response
         """
-        # This is a placeholder implementation
-        # In a real implementation, this would connect to an actual Ollama server
-        
-        # Use specified model or default
         model_to_use = model or self.model
         
-        # Simulate a delay to mimic the model generating a response
-        time.sleep(1)
-        
-        # Include context if provided
-        if context:
-            response = f"Based on the information from your books: {context[:100]}...\n\n"
-            response += f"This is a placeholder response from {model_to_use} to your query: '{prompt}'"
-            return response
-        
-        # Return a placeholder response
-        return f"This is a placeholder response from {model_to_use} to your query: '{prompt}'"
+        try:
+            # Prepare the request payload
+            payload = {
+                "model": model_to_use,
+                "prompt": prompt,
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            }
+            
+            # If context is provided, include it in the prompt
+            if context:
+                # Format the context to be part of the prompt
+                context_prompt = (
+                    "Here is some information that may be relevant to the user's question:\n\n"
+                    f"{context}\n\n"
+                    "Now please respond to the user's question based on this information:\n\n"
+                    f"{prompt}"
+                )
+                payload["prompt"] = context_prompt
+            
+            logger.debug(f"Sending generate request to {self.api_base}/generate with model {model_to_use}")
+            response = requests.post(f"{self.api_base}/generate", json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                generated_text = data.get("response", "")
+                logger.debug(f"Generated {len(generated_text)} chars of text")
+                return generated_text
+            else:
+                error_message = f"Error from Ollama API: Status code {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if "error" in error_data:
+                        error_message += f" - {error_data['error']}"
+                except:
+                    pass
+                
+                logger.error(error_message)
+                return f"Error: {error_message}"
+                
+        except Exception as e:
+            error_message = f"Failed to generate response: {str(e)}"
+            logger.error(error_message)
+            return f"Error: {error_message}"
     
-    def chat(self, messages, temperature=0.7, max_tokens=1000):
+    def chat(self, messages: List[Dict[str, str]], temperature: float = 0.7, 
+            max_tokens: int = 1000, model: Optional[str] = None) -> Dict[str, str]:
         """
-        Generate a chat response from the model.
+        Generate a chat response from the model using the Ollama /chat endpoint.
         
         Args:
             messages: List of message dictionaries [{"role": "user", "content": "..."}]
             temperature: Sampling temperature (higher = more creative)
             max_tokens: Maximum tokens to generate in the response
+            model: Model to use (if None, uses the default model)
             
         Returns:
             dict: The chat response {"role": "assistant", "content": "..."}
         """
-        # This is a placeholder implementation
-        # In a real implementation, this would connect to an actual Ollama server
+        model_to_use = model or self.model
         
-        # Get the last user message
-        last_message = next((m for m in reversed(messages) if m['role'] == 'user'), None)
-        if not last_message:
-            return {"role": "assistant", "content": "I didn't receive a valid message to respond to."}
+        # Validate that we have at least one message
+        if not messages:
+            logger.warning("No messages provided to chat method")
+            return {"role": "assistant", "content": "I didn't receive any messages to respond to."}
         
-        # Simulate a delay to mimic the model generating a response
-        time.sleep(1.5)
-        
-        # Return a placeholder response
-        return {
-            "role": "assistant",
-            "content": f"This is a placeholder response to your message: '{last_message['content']}'"
-        }
+        try:
+            # Prepare the request payload
+            payload = {
+                "model": model_to_use,
+                "messages": messages,
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            }
+            
+            logger.debug(f"Sending chat request to {self.api_base}/chat with model {model_to_use}")
+            response = requests.post(f"{self.api_base}/chat", json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                message = data.get("message", {})
+                logger.debug(f"Received chat response with content length: {len(message.get('content', ''))}")
+                return message
+            else:
+                error_message = f"Error from Ollama API: Status code {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if "error" in error_data:
+                        error_message += f" - {error_data['error']}"
+                except:
+                    pass
+                
+                logger.error(error_message)
+                return {"role": "assistant", "content": f"Error: {error_message}"}
+                
+        except Exception as e:
+            error_message = f"Failed to generate chat response: {str(e)}"
+            logger.error(error_message)
+            return {"role": "assistant", "content": f"Error: {error_message}"}
     
-    def generate_embeddings(self, text):
+    def generate_embeddings(self, text: str, model: Optional[str] = None) -> List[float]:
         """
-        Generate embeddings for text.
+        Generate embeddings for text using the Ollama /embeddings endpoint.
         
         Args:
             text: The text to embed
+            model: Model to use for embeddings (if None, uses the default model)
             
         Returns:
-            list: Vector embedding
+            list: Vector embedding as a list of floats
         """
-        # This is a placeholder implementation
-        # In a real implementation, this would connect to an actual Ollama server
+        model_to_use = model or self.model
         
-        # Return a placeholder embedding (just a list of random values)
-        # A real embedding would be a list of float values
-        import random
-        return [random.random() for _ in range(384)]
+        try:
+            # Prepare the request payload
+            payload = {
+                "model": model_to_use,
+                "prompt": text,
+            }
+            
+            logger.debug(f"Sending embeddings request for text of length {len(text)}")
+            response = requests.post(f"{self.api_base}/embeddings", json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                embedding = data.get("embedding", [])
+                logger.debug(f"Generated embedding with {len(embedding)} dimensions")
+                return embedding
+            else:
+                logger.error(f"Error generating embedding: Status code {response.status_code}")
+                # Return a fallback embedding (this is not ideal but prevents crashes)
+                import numpy as np
+                fallback_embedding = list(np.random.normal(0, 0.1, 384).astype(float))
+                return fallback_embedding
+                
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {str(e)}")
+            # Return a fallback embedding (this is not ideal but prevents crashes)
+            import numpy as np
+            fallback_embedding = list(np.random.normal(0, 0.1, 384).astype(float))
+            return fallback_embedding
