@@ -213,7 +213,7 @@ class FAISSVectorStore(BaseVectorStore):
         ids: Optional[List[str]] = None
     ) -> List[str]:
         """
-        Add texts to the vector store.
+        Add texts to the vector store with improved vector normalization.
         
         Args:
             texts: List of texts to add
@@ -224,16 +224,70 @@ class FAISSVectorStore(BaseVectorStore):
             List of IDs of added texts
         """
         if not texts:
+            logger.warning("Attempted to add empty list of texts to vector store")
+            return []
+            
+        # Log basic information about what's being added
+        logger.info(f"Adding {len(texts)} texts to FAISS vector store")
+        
+        # Generate embeddings with error handling
+        embeddings = []
+        valid_indices = []  # Track which texts have valid embeddings
+        
+        for i, text in enumerate(texts):
+            try:
+                if not text or len(text.strip()) < 10:  # Skip very short texts
+                    logger.warning(f"Skipping text at index {i} due to insufficient content (length: {len(text) if text else 0})")
+                    continue
+                    
+                embedding = self.embedding_function(text)
+                
+                # Check if embedding is valid (not all zeros, no NaNs)
+                if not embedding or len(embedding) == 0:
+                    logger.warning(f"Empty embedding generated for text at index {i}")
+                    continue
+                    
+                embedding_array = np.array(embedding)
+                if np.isnan(embedding_array).any() or np.all(embedding_array == 0):
+                    logger.warning(f"Invalid embedding (NaN or all zeros) generated for text at index {i}")
+                    continue
+                
+                embeddings.append(embedding)
+                valid_indices.append(i)
+            except Exception as e:
+                logger.error(f"Error generating embedding for text at index {i}: {str(e)}")
+                
+        # Skip further processing if no valid embeddings
+        if not embeddings:
+            logger.error("No valid embeddings generated. Skipping vector store update.")
             return []
         
-        # Generate embeddings
-        embeddings = [self.embedding_function(text) for text in texts]
+        # Filter texts, metadatas, and ids to match valid embeddings
+        filtered_texts = [texts[i] for i in valid_indices]
+        
+        if metadatas:
+            filtered_metadatas = [metadatas[i] for i in valid_indices]
+        else:
+            filtered_metadatas = None
+            
+        if ids:
+            filtered_ids = [ids[i] for i in valid_indices]
+        else:
+            filtered_ids = None
         
         # Convert to numpy array
         embeddings_array = np.array(embeddings).astype('float32')
         
-        # Normalize vectors for cosine similarity
+        # Normalize vectors for cosine similarity - handle potential zero vectors
         if self.distance_func == "cosine":
+            # Check for zero vectors and add small epsilon to avoid NaN errors
+            zero_norm_indices = np.where(np.linalg.norm(embeddings_array, axis=1) == 0)[0]
+            if len(zero_norm_indices) > 0:
+                logger.warning(f"Found {len(zero_norm_indices)} zero-norm vectors, adding small epsilon")
+                for idx in zero_norm_indices:
+                    embeddings_array[idx] = np.ones(embeddings_array.shape[1], dtype=np.float32) * 1e-5
+            
+            # Normalize vectors
             faiss.normalize_L2(embeddings_array)
         
         # Generate IDs if not provided
@@ -261,65 +315,114 @@ class FAISSVectorStore(BaseVectorStore):
         self,
         query: str,
         limit: int = 5,
-        where: Optional[Dict[str, Any]] = None
+        where: Optional[Dict[str, Any]] = None,
+        score_threshold: float = None
     ) -> List[Dict[str, Any]]:
         """
-        Search the vector store.
+        Search the vector store with improved handling and filtering of results.
         
         Args:
             query: Search query
             limit: Maximum number of results
             where: Filter condition
+            score_threshold: Optional minimum score threshold (0-1 for cosine, lower is better for L2)
             
         Returns:
             List of search results
         """
+        # Log the search request
+        logger.info(f"Searching FAISS index with query: '{query[:50]}...' (limit={limit})")
+        
         if self.count() == 0:
+            logger.warning("Search attempted on empty FAISS index")
             return []
         
-        # Generate query embedding
-        query_embedding = self.embedding_function(query)
-        
-        # Convert to numpy array
-        query_array = np.array([query_embedding]).astype('float32')
-        
-        # Normalize for cosine similarity
-        if self.distance_func == "cosine":
-            faiss.normalize_L2(query_array)
-        
-        # Search index
-        scores, indices = self.index.search(query_array, self.count())
-        
-        # Get results
-        results = []
-        for i, idx in enumerate(indices[0]):
-            if idx == -1:  # FAISS returns -1 if there are not enough results
-                break
+        try:
+            # Clean query before embedding
+            clean_query = query.strip()
+            if not clean_query:
+                logger.warning("Empty query provided for search")
+                return []
                 
-            # Get metadata and document text
-            metadata = self.metadata["metadatas"][idx]
-            document = self.metadata["documents"][idx]
-            doc_id = self.metadata["ids"][idx]
+            # Generate query embedding
+            query_embedding = self.embedding_function(clean_query)
             
-            # Filter by metadata if where condition is provided
-            if where and not self._matches_filter(metadata, where):
-                continue
+            # Convert to numpy array
+            query_array = np.array([query_embedding]).astype('float32')
             
-            # Add to results
-            result = {
-                "id": doc_id,
-                "text": document,
-                "metadata": metadata,
-                "score": float(scores[0][i])
-            }
+            # Check for zero vectors and add small epsilon to avoid NaN errors
+            if np.linalg.norm(query_array) == 0:
+                logger.warning("Zero-norm query vector detected, adding small epsilon")
+                query_array = np.ones(query_array.shape, dtype=np.float32) * 1e-5
             
-            results.append(result)
+            # Normalize for cosine similarity
+            if self.distance_func == "cosine":
+                faiss.normalize_L2(query_array)
             
-            # Limit results
-            if len(results) >= limit:
-                break
+            # Adjust search limit - always search for more than needed to account for filtering
+            search_limit = min(self.count(), max(limit * 4, 20))
+            
+            # Search index
+            scores, indices = self.index.search(query_array, search_limit)
+            
+            # Get results
+            results = []
+            for i, idx in enumerate(indices[0]):
+                if idx == -1:  # FAISS returns -1 if there are not enough results
+                    break
+                
+                # Skip invalid indices
+                if idx >= len(self.metadata["metadatas"]) or idx >= len(self.metadata["documents"]):
+                    logger.warning(f"FAISS returned invalid index {idx}, skipping")
+                    continue
+                
+                # Get metadata and document text
+                try:
+                    metadata = self.metadata["metadatas"][idx]
+                    document = self.metadata["documents"][idx]
+                    doc_id = self.metadata["ids"][idx]
+                except IndexError as e:
+                    logger.error(f"Index error accessing metadata for result {i}: {str(e)}")
+                    continue
+                
+                # Get the score - adjust based on distance metric
+                score = float(scores[0][i])
+                
+                # Filter by score threshold if provided
+                if score_threshold is not None:
+                    if self.distance_func == "cosine" or self.distance_func == "ip":
+                        # For cosine and inner product, higher is better
+                        if score < score_threshold:
+                            continue
+                    else:
+                        # For L2 distance, lower is better
+                        if score > score_threshold:
+                            continue
+                
+                # Filter by metadata if where condition is provided
+                if where and not self._matches_filter(metadata, where):
+                    continue
+                
+                # Add to results
+                result = {
+                    "id": doc_id,
+                    "text": document,
+                    "metadata": metadata,
+                    "score": score
+                }
+                
+                results.append(result)
+                
+                # Limit results
+                if len(results) >= limit:
+                    break
+            
+            logger.info(f"Search returned {len(results)} results out of {len(indices[0])} matches")
+            return results
         
-        return results
+        except Exception as e:
+            logger.error(f"Error during search: {str(e)}")
+            return []
     
     def get(
         self,
