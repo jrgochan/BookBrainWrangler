@@ -38,7 +38,17 @@ class DocumentProcessor:
             'doc': self.docx_processor
         }
         
-        logger.info("Document processor initialized")
+        # Check processor availability
+        available_formats = []
+        if self.pdf_processor.is_available():
+            available_formats.append('pdf')
+        if self.docx_processor.is_available():
+            available_formats.extend(['docx', 'doc'])
+            
+        if not available_formats:
+            logger.warning("No document processors are fully available. Document processing may be limited.")
+        else:
+            logger.info(f"Document processor initialized with available formats: {', '.join(available_formats)}")
     
     def process_file(
         self,

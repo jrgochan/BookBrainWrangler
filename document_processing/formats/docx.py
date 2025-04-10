@@ -24,8 +24,12 @@ try:
     from docx.text.paragraph import Paragraph
     from docx.opc.constants import RELATIONSHIP_TYPE as RT
     DOCX_AVAILABLE = True
-except ImportError:
-    logger.warning("python-docx not available. DOCX processing will be limited.")
+    logger.info("Successfully imported python-docx and related modules")
+except ImportError as e:
+    logger.warning(f"python-docx not available. DOCX processing will be limited. Error: {str(e)}")
+    DOCX_AVAILABLE = False
+except Exception as e:
+    logger.error(f"Error importing python-docx: {str(e)}")
     DOCX_AVAILABLE = False
 
 class DOCXProcessor:
@@ -38,6 +42,15 @@ class DOCXProcessor:
         # Check dependencies
         if not DOCX_AVAILABLE:
             logger.warning("python-docx not available. DOCX processing will be limited.")
+            
+    def is_available(self) -> bool:
+        """
+        Check if the DOCX processor is available.
+        
+        Returns:
+            True if the processor is fully available, False otherwise
+        """
+        return DOCX_AVAILABLE
     
     def process(
         self, 
@@ -60,6 +73,8 @@ class DOCXProcessor:
                 'images': List of image descriptions with embedded base64 data (if extract_images=True)
             }
         """
+        logger.info(f"Starting DOCX processing for file: {file_path}")
+        
         if not os.path.exists(file_path):
             error_msg = f"DOCX file not found: {file_path}"
             logger.error(error_msg)
@@ -80,26 +95,39 @@ class DOCXProcessor:
             # Define a progress callback handler
             def send_progress(current, total, message="Processing DOCX"):
                 if progress_callback:
-                    progress_callback(current / total, message)
+                    if callable(progress_callback):
+                        progress_callback(current / total, message)
+                    else:
+                        logger.warning(f"Progress callback is not callable: {type(progress_callback)}")
                     
             # Extract text from DOCX
             if DOCX_AVAILABLE:
+                logger.info(f"python-docx is available, processing file: {file_path}")
                 # Load the document
-                doc = docx.Document(file_path)
+                try:
+                    doc = docx.Document(file_path)
+                    logger.info(f"Document loaded successfully, found {len(doc.paragraphs)} paragraphs and {len(doc.tables)} tables")
+                except Exception as e:
+                    logger.error(f"Failed to load document: {str(e)}")
+                    raise
                 
                 # Extract text
                 text_result = self.extract_text(doc, progress_callback=send_progress)
                 result['text'] = text_result.get('text', '')
+                logger.info(f"Text extraction completed, extracted {len(result['text'])} characters")
                 
                 # Extract images if requested
                 if extract_images:
+                    logger.info("Starting image extraction")
                     images_result = self.extract_images(file_path, doc, progress_callback=send_progress)
                     result['images'] = images_result.get('images', [])
+                    logger.info(f"Image extraction completed, extracted {len(result['images'])} images")
             else:
                 logger.warning("python-docx not available, skipping DOCX processing")
                                 
             # Log success
             logger.info(f"Successfully processed DOCX file: {file_path}")
+            logger.info(f"Result summary: {len(result['text'])} characters of text, {len(result['images'])} images")
             return result
             
         except Exception as e:

@@ -44,6 +44,15 @@ class PDFProcessor:
         
         if not PDF2IMAGE_AVAILABLE:
             logger.warning("pdf2image not available. PDF image extraction will be limited.")
+            
+    def is_available(self) -> bool:
+        """
+        Check if the PDF processor is available.
+        
+        Returns:
+            True if the processor is fully available, False otherwise
+        """
+        return PYPDF2_AVAILABLE and PDF2IMAGE_AVAILABLE
     
     def process(
         self, 
