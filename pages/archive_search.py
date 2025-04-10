@@ -311,7 +311,7 @@ def display_book_list_item(
     add_log
 ):
     """
-    Display a book as a list item.
+    Display a book as a list item with improved layout and readability.
     
     Args:
         book: Book metadata dictionary
@@ -329,9 +329,30 @@ def display_book_list_item(
     date = book.get('date', 'Unknown date')
     downloads = book.get('downloads', 0)
     
-    # Create a horizontal list item with columns
+    # Create a horizontal list item with improved column layout
     with st.container(border=True):
-        cols = st.columns([0.15, 0.6, 0.25])
+        # Use CSS to improve spacing and text wrapping
+        st.markdown("""
+        <style>
+        .book-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            line-height: 1.2;
+            overflow-wrap: break-word;
+        }
+        .book-metadata {
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        .book-section {
+            padding: 10px 0;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Use a more balanced column layout for better responsive design
+        cols = st.columns([0.2, 0.55, 0.25])
         
         # Column 1: Cover image and checkbox
         with cols[0]:
@@ -343,27 +364,49 @@ def display_book_list_item(
                 if book_id in st.session_state.selected_books:
                     st.session_state.selected_books.remove(book_id)
             
-            # Cover image (smaller in list view)
-            st.image(cover_url, width=100)
+            # Cover image (maintain aspect ratio and fit container)
+            st.image(cover_url, width=120, use_column_width=True)
         
-        # Column 2: Book details
+        # Column 2: Book details with improved layout
         with cols[1]:
-            st.markdown(f"### {title}")
-            st.markdown(f"**Author:** {author}")
-            st.markdown(f"**Date:** {date}")
-            if downloads:
-                st.markdown(f"**Downloads:** {downloads:,}")
+            # Use HTML for more control over title formatting
+            st.markdown(f'<div class="book-title">{title}</div>', unsafe_allow_html=True)
             
-            # Status indicator if book already exists
+            # Group metadata for better layout
+            metadata_html = f"""
+            <div class="book-metadata">
+                <strong>Author:</strong> {author}<br>
+                <strong>Date:</strong> {date}<br>
+                {f'<strong>Downloads:</strong> {downloads:,}<br>' if downloads else ''}
+            </div>
+            """
+            st.markdown(metadata_html, unsafe_allow_html=True)
+            
+            # Status indicator if book already exists - use colored badge style
             if already_exists:
-                st.info("✓ In Knowledge Base", icon="✅")
+                st.markdown("""
+                <div style="background-color: #e1f5fe; color: #0277bd; 
+                     padding: 4px 8px; border-radius: 4px; display: inline-block;
+                     font-size: 14px; margin: 5px 0;">
+                    ✓ Already in Knowledge Base
+                </div>
+                """, unsafe_allow_html=True)
             
-            # Preview link
+            # Preview link with better styling
             preview_url = book.get('preview_url', f"https://archive.org/details/{book_id}")
-            st.markdown(f"[View on Archive.org]({preview_url})")
+            st.markdown(f"""
+            <a href="{preview_url}" target="_blank" style="text-decoration: none;">
+                <div style="display: inline-block; margin-top: 5px;">
+                    View on Archive.org 
+                    <span style="font-size: 16px;">↗</span>
+                </div>
+            </a>
+            """, unsafe_allow_html=True)
         
-        # Column 3: Download options
+        # Column 3: Download options with improved formatting
         with cols[2]:
+            st.markdown('<div class="book-section"></div>', unsafe_allow_html=True)
+            
             # Format selector and buttons
             format_key = f"formats_{book_id}"
             
@@ -376,13 +419,13 @@ def display_book_list_item(
                 formats = st.session_state[format_key]
             
             if not formats:
-                st.info("No supported formats available")
+                st.info("No supported formats available", icon="ℹ️")
             else:
                 # Sort formats by preference
                 format_preference = {"pdf": 0, "epub": 1, "txt": 2, "docx": 3, "doc": 4}
                 formats.sort(key=lambda f: format_preference.get(f['format'].lower(), 999))
                 
-                # Format options
+                # Format options with better labeling
                 format_options = [f"{f['format'].upper()} - {f['name']}" for f in formats]
                 selected_format = st.selectbox(
                     "Format", 
@@ -394,14 +437,24 @@ def display_book_list_item(
                 selected_index = format_options.index(selected_format)
                 format_info = formats[selected_index]
                 
-                # Size info
+                # Size info with better formatting
                 size_kb = int(int(format_info['size'])/1024)
-                st.caption(f"Size: {size_kb} KB")
+                if size_kb > 1024:
+                    size_mb = size_kb / 1024
+                    st.caption(f"📁 Size: {size_mb:.1f} MB")
+                else:
+                    st.caption(f"📁 Size: {size_kb} KB")
                 
-                # Download buttons
+                # Download buttons with full width and better spacing
+                st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+                
+                # Use a container for full-width buttons
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("Add to KB", key=f"add_kb_list_{book_id}"):
+                    if st.button("Add to KB", 
+                                 key=f"add_kb_list_{book_id}", 
+                                 type="primary",
+                                 use_container_width=True):
                         download_and_process_book(
                             book, 
                             format_info,
@@ -413,7 +466,18 @@ def display_book_list_item(
                         )
                 with col2:
                     direct_url = format_info['url']
-                    st.markdown(f"[Download]({direct_url})")
+                    # Use a button-like appearance for the download link
+                    st.markdown(f"""
+                    <div style="text-align: center;">
+                        <a href="{direct_url}" target="_blank" 
+                           style="display: inline-block; width: 100%; text-decoration: none; 
+                                  color: #1E88E5; font-weight: bold; background-color: #E3F2FD;
+                                  padding: 0.25rem 0.75rem; border-radius: 4px; border: 1px solid #90CAF9;
+                                  text-align: center; box-sizing: border-box;">
+                            Download
+                        </a>
+                    </div>
+                    """, unsafe_allow_html=True)
 
 def display_book_card(
     book: Dict[str, Any],
@@ -540,7 +604,7 @@ def bulk_download_modal(
     add_log
 ):
     """
-    Show a modal for bulk downloading multiple books.
+    Show a modal for bulk downloading multiple books with improved visual layout.
     
     Args:
         books: List of books to download
@@ -556,34 +620,104 @@ def bulk_download_modal(
         if archive_client.check_book_exists_by_title_author(book['title'], book['author']):
             existing_books.append(book)
     
+    # Apply custom CSS for improved appearance
+    st.markdown("""
+    <style>
+    .bulk-download-title {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 15px;
+        color: #1E88E5;
+    }
+    .book-count-info {
+        padding: 8px 15px;
+        border-radius: 4px;
+        margin: 10px 0;
+        font-size: 16px;
+    }
+    .existing-books-list {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-top: 5px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+    }
+    .book-list-item {
+        padding: 5px 0;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    .download-options {
+        margin: 20px 0;
+        padding: 15px;
+        background-color: #f9f9f9;
+        border-radius: 6px;
+        border: 1px solid #eaeaea;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     with st.container(border=True):
-        st.subheader("Bulk Download")
+        # Use HTML for better title formatting
+        st.markdown('<div class="bulk-download-title">Bulk Download Books</div>', unsafe_allow_html=True)
         
-        # Show book count and list
-        st.info(f"Preparing to download {len(books)} books")
+        # Show book count with enhanced styling
+        st.markdown(f"""
+        <div class="book-count-info" style="background-color: #e3f2fd; color: #1565c0;">
+            <strong>📚 Selected:</strong> {len(books)} books for download
+        </div>
+        """, unsafe_allow_html=True)
         
+        # Show existing books with improved styling
         if existing_books:
-            st.warning(f"{len(existing_books)} books already exist in your knowledge base")
+            st.markdown(f"""
+            <div class="book-count-info" style="background-color: #fff8e1; color: #ff8f00;">
+                <strong>⚠️ Note:</strong> {len(existing_books)} books already exist in your knowledge base
+            </div>
+            """, unsafe_allow_html=True)
             
-            with st.expander("Show already existing books"):
+            with st.expander("View already existing books"):
+                st.markdown('<div class="existing-books-list">', unsafe_allow_html=True)
                 for book in existing_books:
-                    st.write(f"• {book['title']} by {book['author']}")
+                    st.markdown(f"""
+                    <div class="book-list-item">
+                        <strong>{book['title']}</strong><br/>
+                        <small>by {book['author']}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
         
-        # Options for download
+        # Options section with better organization
+        st.markdown('<div class="download-options">', unsafe_allow_html=True)
+        st.markdown('#### Download Options', unsafe_allow_html=True)
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            skip_existing = st.checkbox("Skip existing books", value=True)
+            skip_existing = st.checkbox("Skip existing books", value=True, 
+                                       help="If checked, books already in your knowledge base will be skipped")
         
         with col2:
             preferred_format = st.selectbox(
                 "Preferred format",
                 ["PDF", "EPUB", "TXT", "DOCX"],
-                index=0
+                index=0,
+                help="The system will try to download this format first, but will fall back to available formats if needed"
             )
         
-        # Start download button
-        if st.button("Start Downloading", key="start_bulk_download", type="primary"):
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Additional information before starting
+        st.info("""
+        **Processing Information:**
+        - Each book will be downloaded from the Internet Archive
+        - Text will be extracted and added to your knowledge base
+        - This process may take several minutes depending on file sizes
+        """)
+        
+        # Start download button with better styling
+        st.markdown('<div style="margin-top: 20px; text-align: center;">', unsafe_allow_html=True)
+        if st.button("Start Downloading", key="start_bulk_download", type="primary", use_container_width=True):
             # Process each book
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -785,9 +919,12 @@ def download_and_process_book(
             # Track download start time for calculation
             download_start_time = time.time()
             
+            # Use a threading Event to signal completion
+            download_complete = threading.Event()
+            
             # Mock download progress updates
             def download_tracker():
-                while not hasattr(download_tracker, 'complete'):
+                while not download_complete.is_set():
                     elapsed = time.time() - download_start_time
                     # Simulate progress based on file size
                     file_size_kb = int(format_info['size']) / 1024
@@ -801,10 +938,10 @@ def download_and_process_book(
                         overall_progress.progress(progress * 0.3, f"Downloading: {int(progress * 100)}%")
                         time.sleep(0.1)
                     else:
-                        break
+                        # Avoid consuming too much CPU if we hit 99%
+                        time.sleep(0.5)
             
             # Start download tracker in a thread
-            import threading
             tracker_thread = threading.Thread(target=download_tracker)
             tracker_thread.daemon = True
             tracker_thread.start()
@@ -817,11 +954,11 @@ def download_and_process_book(
                 book_info['author']
             )
             
-            # Set tracker complete flag
-            download_tracker.complete = True
+            # Signal the tracker to stop
+            download_complete.set()
             
             # Wait for tracker thread to finish
-            tracker_thread.join(timeout=0.5)
+            tracker_thread.join(timeout=1.0)
             
             if not local_path:
                 download_progress.progress(1.0, "Download failed!")
