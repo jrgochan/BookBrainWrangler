@@ -67,3 +67,4 @@ faiss-cpu
 annoy
 chromadb
 sentence-transformers
+python-docx
