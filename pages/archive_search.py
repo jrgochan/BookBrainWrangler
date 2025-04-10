@@ -145,8 +145,8 @@ def archive_search_page(book_manager: BookManager, knowledge_base: KnowledgeBase
                     add_log
                 )
         
-        # Show results in a grid of cards
-        display_results_grid(
+        # Show results in a list format
+        display_results(
             results, 
             covers, 
             archive_client, 
@@ -225,7 +225,7 @@ def get_book_cover(identifier: str) -> str:
     # If no cover found, return default
     return DEFAULT_COVER_URL
 
-def display_results_grid(
+def display_results(
     results: List[Dict[str, Any]],
     covers: Dict[str, str],
     archive_client: ArchiveOrgClient,
@@ -235,7 +235,7 @@ def display_results_grid(
     add_log
 ):
     """
-    Display search results in a grid layout.
+    Display search results in a list layout.
     
     Args:
         results: List of search results
@@ -253,10 +253,6 @@ def display_results_grid(
     # Checkboxes for batch selection
     if "selected_books" not in st.session_state:
         st.session_state.selected_books = set()
-    
-    # Display grid of cards
-    num_cols = CARDS_PER_ROW
-    rows = [results[i:i+num_cols] for i in range(0, len(results), num_cols)]
     
     # If there are selected books, show batch download option
     if st.session_state.selected_books:
@@ -285,28 +281,139 @@ def display_results_grid(
         if archive_client.check_book_exists_by_title_author(result['title'], result['author']):
             existing_books.add(result['identifier'])
     
-    # Display rows of cards
-    for row in rows:
-        cols = st.columns(num_cols)
+    # Display books in a list format
+    for book in results:
+        # Get book data
+        book_id = book['identifier']
+        title = book['title']
+        author = book['author']
         
-        for i, book in enumerate(row):
-            with cols[i]:
-                # Get book data
-                book_id = book['identifier']
-                title = book['title']
-                author = book['author']
+        # Display book in list format
+        display_book_list_item(
+            book,
+            covers.get(book_id, DEFAULT_COVER_URL),
+            book_id in existing_books,
+            archive_client,
+            document_processor,
+            book_manager,
+            knowledge_base,
+            add_log
+        )
+
+def display_book_list_item(
+    book: Dict[str, Any],
+    cover_url: str,
+    already_exists: bool,
+    archive_client: ArchiveOrgClient,
+    document_processor: DocumentProcessor,
+    book_manager: BookManager,
+    knowledge_base: KnowledgeBase,
+    add_log
+):
+    """
+    Display a book as a list item.
+    
+    Args:
+        book: Book metadata dictionary
+        cover_url: URL to book cover image
+        already_exists: Whether the book already exists in the knowledge base
+        archive_client: ArchiveOrgClient instance
+        document_processor: DocumentProcessor instance
+        book_manager: BookManager instance
+        knowledge_base: KnowledgeBase instance
+        add_log: Function to add log entries
+    """
+    book_id = book['identifier']
+    title = book['title']
+    author = book['author']
+    date = book.get('date', 'Unknown date')
+    downloads = book.get('downloads', 0)
+    
+    # Create a horizontal list item with columns
+    with st.container(border=True):
+        cols = st.columns([0.15, 0.6, 0.25])
+        
+        # Column 1: Cover image and checkbox
+        with cols[0]:
+            # Selection checkbox
+            is_selected = book_id in st.session_state.selected_books
+            if st.checkbox("", value=is_selected, key=f"select_{book_id}"):
+                st.session_state.selected_books.add(book_id)
+            else:
+                if book_id in st.session_state.selected_books:
+                    st.session_state.selected_books.remove(book_id)
+            
+            # Cover image (smaller in list view)
+            st.image(cover_url, width=100)
+        
+        # Column 2: Book details
+        with cols[1]:
+            st.markdown(f"### {title}")
+            st.markdown(f"**Author:** {author}")
+            st.markdown(f"**Date:** {date}")
+            if downloads:
+                st.markdown(f"**Downloads:** {downloads:,}")
+            
+            # Status indicator if book already exists
+            if already_exists:
+                st.info("✓ In Knowledge Base", icon="✅")
+            
+            # Preview link
+            preview_url = book.get('preview_url', f"https://archive.org/details/{book_id}")
+            st.markdown(f"[View on Archive.org]({preview_url})")
+        
+        # Column 3: Download options
+        with cols[2]:
+            # Format selector and buttons
+            format_key = f"formats_{book_id}"
+            
+            # Load formats (lazily) when expanding
+            if format_key not in st.session_state:
+                with st.spinner("Loading formats..."):
+                    formats = archive_client.get_available_formats(book_id)
+                    st.session_state[format_key] = formats
+            else:
+                formats = st.session_state[format_key]
+            
+            if not formats:
+                st.info("No supported formats available")
+            else:
+                # Sort formats by preference
+                format_preference = {"pdf": 0, "epub": 1, "txt": 2, "docx": 3, "doc": 4}
+                formats.sort(key=lambda f: format_preference.get(f['format'].lower(), 999))
                 
-                # Display book card with cover
-                display_book_card(
-                    book,
-                    covers.get(book_id, DEFAULT_COVER_URL),
-                    book_id in existing_books,
-                    archive_client,
-                    document_processor,
-                    book_manager,
-                    knowledge_base,
-                    add_log
+                # Format options
+                format_options = [f"{f['format'].upper()} - {f['name']}" for f in formats]
+                selected_format = st.selectbox(
+                    "Format", 
+                    format_options, 
+                    key=f"format_list_{book_id}"
                 )
+                
+                # Get selected format info
+                selected_index = format_options.index(selected_format)
+                format_info = formats[selected_index]
+                
+                # Size info
+                size_kb = int(int(format_info['size'])/1024)
+                st.caption(f"Size: {size_kb} KB")
+                
+                # Download buttons
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Add to KB", key=f"add_kb_list_{book_id}"):
+                        download_and_process_book(
+                            book, 
+                            format_info,
+                            archive_client,
+                            document_processor,
+                            book_manager,
+                            knowledge_base,
+                            add_log
+                        )
+                with col2:
+                    direct_url = format_info['url']
+                    st.markdown(f"[Download]({direct_url})")
 
 def display_book_card(
     book: Dict[str, Any],
@@ -370,7 +477,7 @@ def display_book_card(
         
         # Status indicator if the book already exists in knowledge base
         if already_exists:
-            st.info("✓ In Knowledge Base", icon="✓")
+            st.info("✓ In Knowledge Base", icon="✅")
         
         # Download button with format selection
         with st.expander("Download Options"):
@@ -624,8 +731,10 @@ def download_and_process_book(
         knowledge_base: KnowledgeBase instance
         add_log: Function to add log entries
     """
-    # Create a container that looks like a dialog
-    dialog_container = st.container(border=True)
+    # Create a full-width container that looks like a dialog
+    st.markdown("---")
+    st.subheader("Processing Book")
+    dialog_container = st.container(border=True, height=600)
     with dialog_container:
         # Display book information at the top
         st.subheader(f"Processing: {book_info['title']}")
