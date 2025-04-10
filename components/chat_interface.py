@@ -1,212 +1,315 @@
 """
-Chat interface component for interacting with the AI.
-Provides a reusable chat interface with message history, context, and typing effects.
+Chat interface component for Book Knowledge AI application.
 """
 
 import streamlit as st
-import time
-from typing import Optional, Callable, List, Dict, Any, Union
+from typing import List, Dict, Any, Optional, Tuple
+
+from utils.logger import get_logger
+from ai import AIClient, get_default_client
+from knowledge_base import KnowledgeBase
+
+logger = get_logger(__name__)
 
 def initialize_chat_state():
-    """
-    Initialize the chat state in session state if not already present.
-    """
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
+    """Initialize the chat-related session state variables."""
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
     
-    if 'context' not in st.session_state:
-        st.session_state.context = ""
-        
-    if 'chat_error' not in st.session_state:
-        st.session_state.chat_error = None
-        
-    if 'processing_message' not in st.session_state:
-        st.session_state.processing_message = False
+    if "chat_context" not in st.session_state:
+        st.session_state.chat_context = ""
+    
+    if "context_docs" not in st.session_state:
+        st.session_state.context_docs = []
+    
+    if "chat_ai_client" not in st.session_state:
+        # Initialize with default client
+        st.session_state.chat_ai_client = get_default_client()
+    
+    if "chat_settings" not in st.session_state:
+        st.session_state.chat_settings = {
+            "temperature": 0.7,
+            "max_tokens": 1000,
+            "use_context": True,
+            "context_strategy": "relevant",  # 'relevant' or 'recent'
+            "model": "llama2"  # Default model
+        }
 
-def add_message(role: str, content: str):
+def render_chat_sidebar(knowledge_base: KnowledgeBase) -> None:
     """
-    Add a message to the chat history.
+    Render the sidebar for the chat interface.
     
     Args:
-        role: 'user' or 'assistant' or 'system'
-        content: The message content
+        knowledge_base: The application's knowledge base
     """
-    st.session_state.messages.append({"role": role, "content": content})
+    st.sidebar.header("Chat Settings")
+    
+    # Model selection
+    ai_client = st.session_state.chat_ai_client
+    
+    # Check if AI client is available
+    if not ai_client.is_available():
+        st.sidebar.warning("⚠️ AI service is not available. Please check your settings.")
+    else:
+        # Try to get available models
+        try:
+            available_models = ai_client.list_models()
+            if available_models:
+                selected_model = st.sidebar.selectbox(
+                    "Model",
+                    options=available_models,
+                    index=available_models.index(st.session_state.chat_settings["model"]) if st.session_state.chat_settings["model"] in available_models else 0
+                )
+                
+                if selected_model != st.session_state.chat_settings["model"]:
+                    st.session_state.chat_settings["model"] = selected_model
+                    st.rerun()
+            else:
+                st.sidebar.info("No models available from the AI service.")
+        except Exception as e:
+            logger.error(f"Error getting models: {str(e)}")
+            st.sidebar.warning(f"Failed to retrieve models: {str(e)}")
+    
+    # Temperature setting
+    temperature = st.sidebar.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=1.0,
+        value=st.session_state.chat_settings["temperature"],
+        step=0.1,
+        help="Higher values make output more random, lower values more deterministic"
+    )
+    if temperature != st.session_state.chat_settings["temperature"]:
+        st.session_state.chat_settings["temperature"] = temperature
+    
+    # Context settings
+    st.sidebar.subheader("Knowledge Base Integration")
+    
+    use_context = st.sidebar.checkbox(
+        "Use knowledge base for context",
+        value=st.session_state.chat_settings["use_context"],
+        help="When enabled, relevant content from your books will be provided to the AI"
+    )
+    if use_context != st.session_state.chat_settings["use_context"]:
+        st.session_state.chat_settings["use_context"] = use_context
+    
+    if use_context:
+        context_strategy = st.sidebar.radio(
+            "Context strategy",
+            options=["Relevant", "Recent"],
+            index=0 if st.session_state.chat_settings["context_strategy"] == "relevant" else 1,
+            help="Relevant: Use semantic search to find relevant passages. Recent: Use recently viewed or mentioned passages."
+        )
+        st.session_state.chat_settings["context_strategy"] = context_strategy.lower()
+    
+    # Display knowledge base stats
+    kb_stats = knowledge_base.get_stats()
+    st.sidebar.info(f"Documents in KB: {kb_stats.get('document_count', 0)}")
+    st.sidebar.info(f"Chunks in KB: {kb_stats.get('chunk_count', 0)}")
+    
+    # Actions
+    st.sidebar.subheader("Actions")
+    
+    if st.sidebar.button("Clear Chat History", key="clear_chat_btn"):
+        st.session_state.chat_history = []
+        st.session_state.context_docs = []
+        st.session_state.chat_context = ""
+        st.rerun()
 
-def clear_chat():
+def clear_chat_history():
     """Clear the chat history."""
-    st.session_state.messages = []
-    st.session_state.chat_error = None
+    st.session_state.chat_history = []
+    st.session_state.context_docs = []
+    st.session_state.chat_context = ""
+    st.rerun()
 
-def set_chat_error(error_message: str):
+def get_context_from_kb(query: str, knowledge_base: KnowledgeBase, strategy: str = "relevant", limit: int = 5) -> str:
     """
-    Set an error message for the chat interface.
+    Get context from the knowledge base based on the specified strategy.
     
     Args:
-        error_message: Error message to display
-    """
-    st.session_state.chat_error = error_message
-
-def clear_chat_error():
-    """Clear any chat error message."""
-    st.session_state.chat_error = None
-
-def get_chat_messages() -> List[Dict[str, str]]:
-    """
-    Get the current chat messages.
-    
+        query: The user's query
+        knowledge_base: The knowledge base to search
+        strategy: The context retrieval strategy ('relevant' or 'recent')
+        limit: Maximum number of results to include
+        
     Returns:
-        List of message dictionaries with 'role' and 'content' keys
+        A string containing the relevant context
     """
-    initialize_chat_state()
-    return st.session_state.messages
-
-def render_chat_interface(
-    on_submit: Optional[Callable[[str], str]] = None,
-    placeholder_text: str = "Ask a question about the books in your knowledge base...",
-    disabled: bool = False,
-    key_prefix: str = "chat"
-) -> Optional[str]:
-    """
-    Render the chat interface with message history and input.
-    
-    Args:
-        on_submit: Callback function when a message is submitted
-            Function signature: on_submit(user_input) -> str
-        placeholder_text: Placeholder text for the chat input
-        disabled: Whether the chat input is disabled
-        key_prefix: Prefix for Streamlit keys to avoid conflicts
+    if strategy == "relevant":
+        # Get relevant content using semantic search
+        from knowledge_base.search import search_knowledge_base
+        
+        results = search_knowledge_base(
+            query,
+            knowledge_base,
+            limit=limit
+        )
+        
+        if not results:
+            return ""
+        
+        # Store context docs for display
+        st.session_state.context_docs = results
+        
+        # Format context for the AI
+        context_parts = []
+        for i, result in enumerate(results):
+            doc_id = result["metadata"].get("document_id", "unknown")
+            title = result["metadata"].get("title", "Untitled document")
+            chunk_text = result["text"]
             
-    Returns:
-        User input if submitted, None otherwise
+            context_parts.append(f"--- DOCUMENT {i+1}: {title} (ID: {doc_id}) ---\n{chunk_text}")
+        
+        return "\n\n".join(context_parts)
+    
+    elif strategy == "recent":
+        # Use the most recently mentioned documents from the chat history
+        # This would be more sophisticated in a real implementation,
+        # potentially tracking which documents were recently viewed or mentioned
+        from knowledge_base.search import get_recent_documents
+        
+        results = get_recent_documents(knowledge_base, limit=limit)
+        
+        if not results:
+            return ""
+        
+        # Store context docs for display
+        st.session_state.context_docs = results
+        
+        # Format context for the AI
+        context_parts = []
+        for i, result in enumerate(results):
+            doc_id = result["metadata"].get("document_id", "unknown")
+            title = result["metadata"].get("title", "Untitled document")
+            chunk_text = result["text"]
+            
+            context_parts.append(f"--- DOCUMENT {i+1}: {title} (ID: {doc_id}) ---\n{chunk_text}")
+        
+        return "\n\n".join(context_parts)
+    
+    return ""
+
+def render_chat_interface(knowledge_base: KnowledgeBase):
     """
-    # Initialize chat state if needed
+    Render the chat interface.
+    
+    Args:
+        knowledge_base: The application's knowledge base
+    """
+    # Initialize session state if needed
     initialize_chat_state()
     
-    # Display error message if exists
-    if st.session_state.chat_error:
-        st.error(st.session_state.chat_error)
-        # Add a button to clear the error
-        if st.button("Dismiss Error", key=f"{key_prefix}_dismiss_error"):
-            clear_chat_error()
+    # Chat header
+    st.title("Chat with AI")
+    st.subheader("Ask questions about your documents and get AI-powered responses")
     
-    # Display chat messages
-    for i, message in enumerate(st.session_state.messages):
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Check if knowledge base is empty
+    kb_stats = knowledge_base.get_stats()
+    if kb_stats.get("document_count", 0) == 0:
+        st.warning("Your knowledge base is empty. Please add documents first.")
+        
+        if st.button("Go to Knowledge Management", key="chat_to_book_management_btn"):
+            st.session_state.current_page = "book_management"
+            st.rerun()
+        
+        return
     
-    # Display the message processing indicator if applicable
-    if st.session_state.processing_message:
-        with st.chat_message("assistant"):
-            st.write("Thinking...")
+    # Main layout with chat area and input
+    chat_container = st.container()
+    
+    # Display existing chat messages
+    with chat_container:
+        for message in st.session_state.chat_history:
+            role = message["role"]
+            content = message["content"]
+            
+            with st.chat_message(role):
+                st.write(content)
+                
+                # If this is an assistant message and it has context, show it in an expander
+                if role == "assistant" and message.get("context_docs"):
+                    with st.expander("View sources", expanded=False):
+                        for i, doc in enumerate(message["context_docs"]):
+                            st.markdown(f"**Source {i+1}**: {doc['metadata'].get('title', 'Untitled')}")
+                            st.text(doc["text"][:200] + "..." if len(doc["text"]) > 200 else doc["text"])
     
     # Chat input
-    if not disabled and not st.session_state.processing_message:
-        if user_input := st.chat_input(placeholder_text, key=f"{key_prefix}_chat_input"):
-            # Add user message to chat
-            add_message("user", user_input)
-            
-            # Display user message
-            with st.chat_message("user"):
-                st.markdown(user_input)
-            
-            # Set processing flag
-            st.session_state.processing_message = True
-            
-            # Call the submission handler if provided
-            if on_submit:
-                try:
-                    with st.chat_message("assistant"):
-                        message_placeholder = st.empty()
-                        message_placeholder.markdown("Thinking...")
-                        
-                        # The on_submit function should return the assistant's response
-                        response = on_submit(user_input)
-                        
-                        # Update the placeholder with the response
-                        if response:
-                            message_placeholder.markdown(response)
-                            
-                            # Add assistant message to chat
-                            add_message("assistant", response)
-                        else:
-                            message_placeholder.markdown("I couldn't generate a response. Please try again.")
-                except Exception as e:
-                    set_chat_error(f"Error generating response: {str(e)}")
-            
-            # Clear processing flag
-            st.session_state.processing_message = False
-            
-            return user_input
+    user_input = st.chat_input("Type your message here...")
     
-    return None
-
-def render_context_display(
-    context: str, 
-    show_context: bool = True,
-    title: str = "📚 AI Context (click to expand)"
-):
-    """
-    Render the context display with an expandable section.
-    
-    Args:
-        context: The context text to display
-        show_context: Whether to display the context section
-        title: Title for the expander
-    """
-    if show_context and context:
-        with st.expander(title, expanded=False):
-            st.markdown(context)
-            
-            # Add a divider
-            st.divider()
-            
-            # Add information about the context
-            st.caption("This represents the information retrieved from your knowledge base that the AI is using to answer your question.")
-    elif show_context:
-        with st.expander(title, expanded=False):
-            st.info("No context available. Try adding books to your knowledge base.")
-            st.caption("The AI needs information from your books to provide relevant answers.")
-
-def simulate_typing(
-    placeholder: Any, 
-    text: str, 
-    speed: float = 0.01,
-    min_speed: float = 0.001,
-    max_chars: int = 1000
-):
-    """
-    Simulate typing effect for assistant responses.
-    Adjusts speed based on text length for better performance.
-    
-    Args:
-        placeholder: Streamlit placeholder object
-        text: Text to display
-        speed: Delay between characters in seconds
-        min_speed: Minimum delay for very long texts
-        max_chars: Maximum number of characters before reducing animation detail
-    """
-    # Adjust speed for long texts
-    text_length = len(text)
-    
-    if text_length > max_chars:
-        # For very long texts, reduce animation detail
-        chunk_size = max(1, text_length // 100)
-        reduced_speed = max(min_speed, speed * 0.5)
+    if user_input:
+        # Display user message
+        with st.chat_message("user"):
+            st.write(user_input)
         
-        full_text = ""
-        for i in range(0, text_length, chunk_size):
-            chunk = text[i:i+chunk_size]
-            full_text += chunk
-            placeholder.markdown(full_text + "▌")
-            time.sleep(reduced_speed)
-    else:
-        # Full animation for shorter texts
-        full_text = ""
-        for char in text:
-            full_text += char
-            placeholder.markdown(full_text + "▌")
-            time.sleep(speed)
+        # Add to chat history
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Get context from knowledge base if enabled
+        context = ""
+        if st.session_state.chat_settings["use_context"]:
+            with st.spinner("Searching knowledge base..."):
+                context = get_context_from_kb(
+                    user_input,
+                    knowledge_base,
+                    strategy=st.session_state.chat_settings["context_strategy"]
+                )
+                st.session_state.chat_context = context
+        
+        # Process with AI and get response
+        with st.spinner("Thinking..."):
+            try:
+                # Prepare messages for the AI
+                messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.chat_history]
+                
+                # Get the AI client
+                ai_client = st.session_state.chat_ai_client
+                
+                # Check if AI client is available
+                if not ai_client.is_available():
+                    response = "AI service is not available. Please check your settings."
+                    logger.error("AI service not available for chat response")
+                else:
+                    # Generate response
+                    system_prompt = None
+                    if st.session_state.chat_settings["use_context"] and context:
+                        system_prompt = """You are a helpful assistant that answers questions about books and documents.
+                        
+When the user asks a question, consider the provided document contexts to give accurate, relevant information.
+Always be truthful - if the information isn't in the documents, say so.
+Cite specific documents when providing information from them.
+Be concise but complete in your answers."""
+                    
+                    response = ai_client.generate_chat_response(
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        context=context,
+                        model=st.session_state.chat_settings["model"],
+                        temperature=st.session_state.chat_settings["temperature"]
+                    )
+                
+                # Add to chat history
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": response,
+                    "context_docs": st.session_state.context_docs if st.session_state.chat_settings["use_context"] else []
+                })
+                
+                # Display assistant response
+                with st.chat_message("assistant"):
+                    st.write(response)
+                    
+                    # Show context sources if available
+                    if st.session_state.chat_settings["use_context"] and st.session_state.context_docs:
+                        with st.expander("View sources", expanded=False):
+                            for i, doc in enumerate(st.session_state.context_docs):
+                                st.markdown(f"**Source {i+1}**: {doc['metadata'].get('title', 'Untitled')}")
+                                st.text(doc["text"][:200] + "..." if len(doc["text"]) > 200 else doc["text"])
             
-    # Final display without cursor
-    placeholder.markdown(text)
+            except Exception as e:
+                error_msg = f"Error generating response: {str(e)}"
+                logger.error(error_msg)
+                st.error(error_msg)

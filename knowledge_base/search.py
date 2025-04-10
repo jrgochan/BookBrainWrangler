@@ -5,6 +5,7 @@ Handles searching the knowledge base.
 
 from typing import List, Dict, Any, Optional, Union
 import re
+from datetime import datetime, timedelta
 
 from utils.logger import get_logger
 from knowledge_base.config import (
@@ -136,3 +137,83 @@ def format_result_for_display(result: Dict[str, Any]) -> Dict[str, Any]:
         formatted["metadata"] = {}
     
     return formatted
+
+
+def get_recent_documents(
+    kb: KnowledgeBase,
+    limit: int = 5,
+    max_age_days: int = 30
+) -> List[Dict[str, Any]]:
+    """
+    Get the most recently added documents from the knowledge base.
+    
+    Args:
+        kb: KnowledgeBase instance
+        limit: Maximum number of documents to return
+        max_age_days: Maximum age of documents in days
+        
+    Returns:
+        List of document chunks sorted by recency
+    """
+    try:
+        # Get all documents
+        documents = kb.list_documents()
+        
+        if not documents:
+            logger.warning("No documents found in knowledge base")
+            return []
+        
+        # Filter by age if needed
+        if max_age_days > 0:
+            cutoff_date = datetime.now() - timedelta(days=max_age_days)
+            # Filter documents added after the cutoff date
+            # Note: This assumes 'date_added' is stored as ISO format string
+            documents = [
+                doc for doc in documents 
+                if 'date_added' not in doc or 
+                   datetime.fromisoformat(doc.get('date_added', '2020-01-01')) > cutoff_date
+            ]
+        
+        # Sort by date added (most recent first)
+        documents.sort(
+            key=lambda x: datetime.fromisoformat(x.get('date_added', '2020-01-01')),
+            reverse=True
+        )
+        
+        # Limit the number of documents
+        documents = documents[:limit]
+        
+        # For each document, get some representative chunks
+        results = []
+        for doc in documents:
+            # Get chunks for this document
+            doc_chunks = kb.get_document_chunks(doc['id'], limit=2)
+            
+            # Add each chunk to results
+            for chunk in doc_chunks:
+                # Make sure we have proper metadata
+                if 'metadata' not in chunk:
+                    chunk['metadata'] = {}
+                
+                # Add document metadata to chunk
+                chunk['metadata']['document_id'] = doc['id']
+                chunk['metadata']['title'] = doc.get('metadata', {}).get('title', 'Untitled')
+                chunk['metadata']['author'] = doc.get('metadata', {}).get('author', 'Unknown')
+                
+                # Add to results
+                results.append(chunk)
+                
+                # Only get one chunk per document if we need to limit results
+                if len(results) >= limit:
+                    break
+            
+            # Check if we've reached the limit
+            if len(results) >= limit:
+                break
+        
+        logger.info(f"Retrieved {len(results)} recent document chunks")
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error getting recent documents: {str(e)}")
+        return []

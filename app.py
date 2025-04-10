@@ -27,19 +27,42 @@ st.set_page_config(
 def init_session_state():
     """Initialize session state variables."""
     if "initialized" not in st.session_state:
+        # Initialize core components
         st.session_state.initialized = True
         st.session_state.document_processor = DocumentProcessor()
         st.session_state.knowledge_base = KnowledgeBase()
+        
+        # Initialize AI client
+        from ai import get_default_client
+        st.session_state.ai_client = get_default_client()
+        st.session_state.chat_ai_client = st.session_state.ai_client  # For chat interface
+        
+        # Initialize navigation and UI state
         st.session_state.current_page = "home"
         st.session_state.sidebar_collapsed = False
         st.session_state.theme = "light"
+        
+        # Initialize document handling
         st.session_state.uploaded_files = []
         st.session_state.processing_results = {}
         st.session_state.search_results = []
         st.session_state.selected_document = None
+        
+        # Initialize chat and AI state
         st.session_state.ai_model = "default"
         st.session_state.chat_history = []
         st.session_state.kb_enabled = True
+        
+        # Initialize chat settings if not already set
+        if "chat_settings" not in st.session_state:
+            st.session_state.chat_settings = {
+                "temperature": 0.7,
+                "max_tokens": 1000,
+                "use_context": True,
+                "context_strategy": "relevant",
+                "model": "llama2"  # Default model
+            }
+        
         logger.info("Session state initialized")
 
 # Render sidebar
@@ -353,76 +376,14 @@ def render_knowledge_base_page():
 # Render chat page
 def render_chat_page():
     """Render the chat page."""
-    st.title("Chat with AI")
-    st.subheader("Ask questions about your documents")
+    # Import the chat interface component
+    from components.chat_interface import render_chat_interface, render_chat_sidebar
     
-    # Check if knowledge base is empty
-    kb_stats = st.session_state.knowledge_base.get_stats()
-    if kb_stats.get("document_count", 0) == 0:
-        st.warning("Your knowledge base is empty. Please add documents first.")
-        
-        if st.button("Go to Knowledge Management", key="chat_to_book_management_btn"):
-            st.session_state.current_page = "book_management"
-            st.rerun()
-        
-        return
+    # Render the chat interface
+    render_chat_interface(st.session_state.knowledge_base)
     
-    # Initialize chat history
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
-    
-    # Display chat history
-    for message in st.session_state.chat_history:
-        if message["role"] == "user":
-            st.chat_message("user").write(message["content"])
-        else:
-            st.chat_message("assistant").write(message["content"])
-    
-    # Chat input
-    user_input = st.chat_input("Ask a question about your documents")
-    
-    if user_input:
-        # Add user message to chat history
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": user_input
-        })
-        
-        # Display user message
-        st.chat_message("user").write(user_input)
-        
-        # Get AI response
-        with st.spinner("Thinking..."):
-            # Search knowledge base
-            from knowledge_base.search import search_knowledge_base
-            
-            results = search_knowledge_base(
-                user_input,
-                st.session_state.knowledge_base,
-                limit=5
-            )
-            
-            # Simulate AI response
-            if results:
-                # Use the search results as context
-                context = "\n\n".join([r["text"] for r in results])
-                
-                # Simple response based on results
-                response = f"Based on your documents, I found the following information:\n\n{context[:500]}..."
-            else:
-                response = "I couldn't find any relevant information in your documents. Try a different question or add more documents to your knowledge base."
-        
-        # Add AI response to chat history
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": response
-        })
-        
-        # Display AI response
-        st.chat_message("assistant").write(response)
-        
-        # Rerun to update UI
-        st.rerun()
+    # Render the chat sidebar (will be merged with the main sidebar)
+    render_chat_sidebar(st.session_state.knowledge_base)
 
 # Render settings page
 def render_settings_page():
