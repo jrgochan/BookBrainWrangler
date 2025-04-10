@@ -9,6 +9,7 @@ import time
 from typing import Dict, List, Any, Optional, Union
 from database import get_connection
 from loguru import logger
+from utils.notifications import get_notification_manager, NotificationLevel, NotificationType
 
 class BookManager:
     def __init__(self):
@@ -390,6 +391,17 @@ class BookManager:
                 return content
                 
             logger.debug(f"No content found for book ID {book_id}")
+            
+            # Get book details for notification if content is missing
+            book = self.get_book(book_id)
+            if book:
+                # Create notification for missing content
+                notification_manager = get_notification_manager()
+                notification_manager.notify_missing_content(
+                    book_id=book_id,
+                    book_title=book["title"]
+                )
+                
             return None
             
         except Exception as e:

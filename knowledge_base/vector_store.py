@@ -9,6 +9,7 @@ import uuid
 from typing import List, Dict, Any, Optional, Callable, Type, Union, Tuple
 
 from utils.logger import get_logger
+from utils.notifications import get_notification_manager, NotificationLevel, NotificationType
 from knowledge_base.embedding import get_embedding_function
 from knowledge_base.chunking import chunk_document
 from knowledge_base.vector_stores import get_vector_store, get_available_vector_stores
@@ -309,7 +310,8 @@ class VectorStore:
         book_id: str, 
         content: Optional[str] = None, 
         add_to_kb: bool = True,
-        progress_callback: Optional[Callable[[float, int, str], None]] = None
+        progress_callback: Optional[Callable[[float, int, str], None]] = None,
+        book_title: Optional[str] = None  # Added book_title parameter
     ) -> bool:
         """
         Toggle a book's inclusion in the knowledge base.
@@ -319,13 +321,35 @@ class VectorStore:
             content: Book content (required if adding to KB)
             add_to_kb: True to add to KB, False to remove
             progress_callback: Optional callback for progress updates
+            book_title: Optional book title for notification purposes
             
         Returns:
             True if operation was successful
         """
+        # Get notification manager
+        notification_manager = get_notification_manager()
+        
         if add_to_kb:
             if not content:
-                logger.error(f"Cannot add book {book_id} to knowledge base: no content provided")
+                error_message = f"Cannot add book {book_id} to knowledge base: no content provided"
+                logger.error(error_message)
+                
+                # Create a notification for missing content
+                if book_title:
+                    notification_manager.notify_missing_content(
+                        book_id=int(book_id) if str(book_id).isdigit() else 0,
+                        book_title=book_title
+                    )
+                else:
+                    # Generic notification if book title not provided
+                    notification_manager.create_notification(
+                        message=f"Cannot add book to knowledge base: no content provided",
+                        level=NotificationLevel.ERROR,
+                        notification_type=NotificationType.BOOK_CONTENT_MISSING,
+                        book_id=int(book_id) if str(book_id).isdigit() else 0,
+                        details="The book has no text content. This may happen if the file upload or processing was interrupted."
+                    )
+                
                 return False
                 
             # Add document to knowledge base
@@ -337,7 +361,17 @@ class VectorStore:
                 logger.info(f"Added book {book_id} to knowledge base")
                 return True
             except Exception as e:
-                logger.error(f"Error adding book {book_id} to knowledge base: {str(e)}")
+                error_message = f"Error adding book {book_id} to knowledge base: {str(e)}"
+                logger.error(error_message)
+                
+                # Create a notification for the error
+                if book_title:
+                    notification_manager.notify_knowledge_base_error(
+                        book_id=int(book_id) if str(book_id).isdigit() else 0,
+                        book_title=book_title,
+                        error_message=str(e)
+                    )
+                
                 return False
         else:
             # Remove document from knowledge base

@@ -17,6 +17,7 @@ from datetime import datetime
 # Configure logging
 from utils.logger import get_logger
 from database import get_connection
+from utils.notifications import get_notification_manager, NotificationLevel, NotificationType
 logger = get_logger(__name__)
 
 # Base URLs for Internet Archive API
@@ -169,6 +170,7 @@ class ArchiveOrgClient:
             Path to the downloaded file, or None if download failed
         """
         logger.info(f"Downloading book: {identifier} from {file_url}")
+        notification_manager = get_notification_manager()
         
         # Extract filename from URL
         file_name = os.path.basename(file_url)
@@ -202,10 +204,27 @@ class ArchiveOrgClient:
                         f.write(chunk)
             
             logger.info(f"Downloaded book successfully: {local_path}")
+            
+            # Create success notification
+            notification_manager.create_notification(
+                message=f"Successfully downloaded '{title or identifier}' from Archive.org",
+                level=NotificationLevel.SUCCESS,
+                notification_type=NotificationType.GENERAL,
+                details=f"File saved to: {local_path}"
+            )
+            
             return local_path
             
         except Exception as e:
-            logger.error(f"Error downloading file {file_url}: {str(e)}")
+            error_message = f"Error downloading file {file_url}: {str(e)}"
+            logger.error(error_message)
+            
+            # Create notification for download error
+            notification_manager.notify_archive_download_error(
+                identifier=identifier,
+                error_message=error_message
+            )
+            
             return None
     
     def calculate_file_hash(self, file_path: str) -> str:

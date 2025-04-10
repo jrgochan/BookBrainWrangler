@@ -97,6 +97,10 @@ def render_sidebar():
         if st.button("⚙️ Settings", key="sidebar_settings_btn", use_container_width=True):
             st.session_state.current_page = "settings"
             st.rerun()
+            
+        if st.button("🔔 Notifications", key="sidebar_notifications_btn", use_container_width=True):
+            st.session_state.current_page = "notifications"
+            st.rerun()
         
         st.markdown("---")
         
@@ -105,6 +109,13 @@ def render_sidebar():
         kb_stats = st.session_state.knowledge_base.get_stats()
         st.info(f"Documents in KB: {kb_stats.get('document_count', 0)}")
         st.info(f"Total Chunks: {kb_stats.get('chunk_count', 0)}")
+        
+        # Notification indicator
+        from utils.notifications import get_notification_manager
+        notification_manager = get_notification_manager()
+        unread_count = notification_manager.count_unread()
+        if unread_count > 0:
+            st.warning(f"🔔 {unread_count} unread notifications", icon="🔔")
         
         # Footer
         st.markdown("---")
@@ -405,6 +416,15 @@ def render_archive_search_page():
     
     # Call the implemented archive search page
     render_archive_search_page()
+    
+# Render notifications page
+def render_notifications_page():
+    """Render the notifications page."""
+    # Import the notifications page module
+    from pages.notifications import render_notifications_page
+    
+    # Call the implemented notifications page
+    render_notifications_page()
 
 # Main application
 def main():
@@ -429,6 +449,8 @@ def main():
             render_chat_page()
         elif st.session_state.current_page == "settings":
             render_settings_page()
+        elif st.session_state.current_page == "notifications":
+            render_notifications_page()
         
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")

@@ -5,6 +5,7 @@ Knowledge Base page for the application.
 import streamlit as st
 import time
 from utils.ui_helpers import create_download_link, show_progress_bar
+from utils.notifications import get_notification_manager, render_notification_center
 
 def render_knowledge_base_page(book_manager, knowledge_base):
     """
@@ -14,7 +15,18 @@ def render_knowledge_base_page(book_manager, knowledge_base):
         book_manager: The BookManager instance
         knowledge_base: The KnowledgeBase instance
     """
+    # Get notification manager
+    notification_manager = get_notification_manager()
+    
+    # Display notification indicator
+    notification_manager.render_notification_indicator()
+    
     st.title("Knowledge Base")
+    
+    # Add a notification center expander if there are unread notifications
+    if notification_manager.count_unread() > 0:
+        with st.expander(f"📢 Notifications ({notification_manager.count_unread()} unread)", expanded=False):
+            render_notification_center()
     
     # Check for KB rebuild/reset requests from settings page
     if hasattr(st.session_state, 'rebuild_kb') and st.session_state.rebuild_kb:
@@ -167,6 +179,17 @@ def render_book_grid(book_manager, knowledge_base, books, indexed_book_ids):
                             # Get the book content
                             content = book_manager.get_book_content(book['id'])
                             
+                            # Check if content exists
+                            if not content:
+                                st.error(f"Cannot add '{book['title']}' to knowledge base: no content available")
+                                get_notification_manager().notify_missing_content(
+                                    book_id=book['id'],
+                                    book_title=book['title']
+                                )
+                                # Reset toggle
+                                st.session_state[toggle_key] = False
+                                continue
+                                
                             # Create progress tracking
                             progress_container = st.empty()
                             
@@ -188,27 +211,53 @@ def render_book_grid(book_manager, knowledge_base, books, indexed_book_ids):
                                     )
                             
                             # Add to knowledge base with progress updates
-                            knowledge_base.toggle_book_in_knowledge_base(
+                            success = knowledge_base.toggle_book_in_knowledge_base(
                                 book['id'], 
                                 content, 
                                 add_to_kb=True,
-                                progress_callback=update_progress
+                                progress_callback=update_progress,
+                                book_title=book['title']  # Pass book title for notifications
                             )
                             
-                            st.success(f"Added '{book['title']}' to knowledge base!")
-                            time.sleep(1)  # Brief pause to show success message
+                            if success:
+                                st.success(f"Added '{book['title']}' to knowledge base!")
+                                # Display success notification
+                                get_notification_manager().create_notification(
+                                    message=f"Successfully added '{book['title']}' to knowledge base.",
+                                    level=get_notification_manager().NotificationLevel.SUCCESS,
+                                    notification_type=get_notification_manager().NotificationType.GENERAL,
+                                    book_id=book['id'],
+                                    book_title=book['title']
+                                )
+                            else:
+                                st.error(f"Failed to add '{book['title']}' to knowledge base.")
+                                
+                            time.sleep(1)  # Brief pause to show message
                             st.rerun()  # Refresh to update stats
                 else:
                     # Should be removed from KB
                     if is_in_kb:
                         with st.spinner(f"Removing '{book['title']}' from knowledge base..."):
-                            knowledge_base.toggle_book_in_knowledge_base(
+                            success = knowledge_base.toggle_book_in_knowledge_base(
                                 book['id'], 
                                 None, 
-                                add_to_kb=False
+                                add_to_kb=False,
+                                book_title=book['title']
                             )
                             
-                            st.error(f"Removed '{book['title']}' from knowledge base")
+                            if success:
+                                st.warning(f"Removed '{book['title']}' from knowledge base")
+                                # Display removal notification
+                                get_notification_manager().create_notification(
+                                    message=f"Removed '{book['title']}' from knowledge base.",
+                                    level=get_notification_manager().NotificationLevel.INFO,
+                                    notification_type=get_notification_manager().NotificationType.GENERAL,
+                                    book_id=book['id'],
+                                    book_title=book['title']
+                                )
+                            else:
+                                st.error(f"Failed to remove '{book['title']}' from knowledge base.")
+                                
                             time.sleep(1)  # Brief pause to show message
                             st.rerun()  # Refresh to update stats
 
