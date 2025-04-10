@@ -41,7 +41,7 @@ class ArchiveOrgClient:
         os.makedirs(download_dir, exist_ok=True)
         logger.info(f"Initialized Internet Archive client with download directory: {download_dir}")
     
-    def search_books(self, query: str, max_results: int = 50, media_type: str = "texts") -> List[Dict[str, Any]]:
+    def search_books(self, query: str, max_results: int = 50, media_type: str = "texts", sort: str = "downloads desc") -> List[Dict[str, Any]]:
         """
         Search for books in the Internet Archive.
         
@@ -49,22 +49,26 @@ class ArchiveOrgClient:
             query: Search query
             max_results: Maximum number of results to return
             media_type: Type of media to search for (default: texts)
+            sort: Sort order (e.g., "downloads desc", "title asc")
             
         Returns:
             List of book metadata dictionaries
         """
-        logger.info(f"Searching Internet Archive for: '{query}', max_results={max_results}")
+        logger.info(f"Searching Internet Archive for: '{query}', max_results={max_results}, sort={sort}")
         
         # Prepare search parameters for the API
         search_query = f'("{query}") AND mediatype:{media_type}'
         params = {
             "q": search_query,
-            "fl[]": ["identifier", "title", "creator", "date", "description", "subject", "mediatype", "downloads"],
+            "fl[]": ["identifier", "title", "creator", "date", "description", "subject", "mediatype", "downloads", "addeddate"],
             "output": "json",
             "rows": max_results,
-            "page": 1,
-            "sort[]": ["downloads desc"]  # Sort by number of downloads
+            "page": 1
         }
+        
+        # Add sort parameter if provided
+        if sort:
+            params["sort[]"] = [sort]
         
         try:
             logger.debug(f"Sending search request with params: {params}")
