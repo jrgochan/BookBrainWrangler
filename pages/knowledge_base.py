@@ -5,7 +5,7 @@ Knowledge Base page for the application.
 import streamlit as st
 import time
 from utils.ui_helpers import create_download_link, show_progress_bar
-from utils.notifications import get_notification_manager, render_notification_center
+from utils.notifications import get_notification_manager, render_notification_center, NotificationLevel, NotificationType
 
 def render_knowledge_base_page(book_manager, knowledge_base):
     """
@@ -23,10 +23,9 @@ def render_knowledge_base_page(book_manager, knowledge_base):
     
     st.title("Knowledge Base")
     
-    # Add a notification center expander if there are unread notifications
+    # Display notifications indicator without using an expander
     if notification_manager.count_unread() > 0:
-        with st.expander(f"📢 Notifications ({notification_manager.count_unread()} unread)", expanded=False):
-            render_notification_center()
+        st.info(f"📢 You have {notification_manager.count_unread()} unread notifications. View them on the Notifications page.")
     
     # Check for KB rebuild/reset requests from settings page
     if hasattr(st.session_state, 'rebuild_kb') and st.session_state.rebuild_kb:
@@ -161,20 +160,47 @@ def render_book_grid(book_manager, knowledge_base, books, indexed_book_ids):
                 st.markdown(f"### {book['title']}")
                 st.markdown(f"*by {book['author']}*")
                 
-                # Toggle for knowledge base inclusion
-                is_in_kb = book['id'] in indexed_book_ids
+                # Check if we need to initialize or update the book's KB status in session state
+                book_state_key = f"kb_status_{book['id']}"
+                if book_state_key not in st.session_state:
+                    # Initialize with current status
+                    st.session_state[book_state_key] = book['id'] in indexed_book_ids
                 
-                # Use a unique key for each toggle
+                # Get content availability status
+                if book_state_key + "_no_content" not in st.session_state:
+                    st.session_state[book_state_key + "_no_content"] = False
+                
+                # Use the stored value for the toggle
+                is_in_kb = st.session_state[book_state_key]
                 toggle_key = f"kb_toggle_{book['id']}"
                 
-                if st.toggle(
+                # If we've previously seen this book has no content, show disabled toggle with message
+                if st.session_state[book_state_key + "_no_content"]:
+                    st.toggle(
+                        "Include in Knowledge Base", 
+                        value=False,
+                        key=toggle_key,
+                        disabled=True,
+                        help="This book has no content and cannot be added to the knowledge base"
+                    )
+                    st.caption("❌ No content available")
+                    continue
+                
+                # Regular toggle for books with content (or unknown content status)
+                toggle_value = st.toggle(
                     "Include in Knowledge Base", 
                     value=is_in_kb, 
                     key=toggle_key,
                     help="Toggle to add or remove this book from your knowledge base"
-                ):
-                    # Should be added to KB but isn't yet
-                    if not is_in_kb:
+                )
+                
+                # Toggle state changed
+                if toggle_value != is_in_kb:
+                    # Save the new value for the next rerun
+                    st.session_state[book_state_key] = toggle_value
+                    
+                    # Toggle turned ON - Add to KB
+                    if toggle_value and not is_in_kb:
                         with st.spinner(f"Adding '{book['title']}' to knowledge base..."):
                             # Get the book content
                             content = book_manager.get_book_content(book['id'])
@@ -186,9 +212,11 @@ def render_book_grid(book_manager, knowledge_base, books, indexed_book_ids):
                                     book_id=book['id'],
                                     book_title=book['title']
                                 )
-                                # Reset toggle
-                                st.session_state[toggle_key] = False
-                                continue
+                                # Mark this book as having no content for future runs
+                                st.session_state[book_state_key + "_no_content"] = True
+                                # Reset the KB status
+                                st.session_state[book_state_key] = False
+                                st.rerun()
                                 
                             # Create progress tracking
                             progress_container = st.empty()
@@ -224,19 +252,21 @@ def render_book_grid(book_manager, knowledge_base, books, indexed_book_ids):
                                 # Display success notification
                                 get_notification_manager().create_notification(
                                     message=f"Successfully added '{book['title']}' to knowledge base.",
-                                    level=get_notification_manager().NotificationLevel.SUCCESS,
-                                    notification_type=get_notification_manager().NotificationType.GENERAL,
+                                    level=NotificationLevel.SUCCESS,
+                                    notification_type=NotificationType.GENERAL,
                                     book_id=book['id'],
                                     book_title=book['title']
                                 )
                             else:
                                 st.error(f"Failed to add '{book['title']}' to knowledge base.")
+                                # Reset the toggle state in session
+                                st.session_state[book_state_key] = False
                                 
                             time.sleep(1)  # Brief pause to show message
                             st.rerun()  # Refresh to update stats
-                else:
-                    # Should be removed from KB
-                    if is_in_kb:
+                            
+                    # Toggle turned OFF - Remove from KB
+                    elif not toggle_value and is_in_kb:
                         with st.spinner(f"Removing '{book['title']}' from knowledge base..."):
                             success = knowledge_base.toggle_book_in_knowledge_base(
                                 book['id'], 
@@ -250,13 +280,15 @@ def render_book_grid(book_manager, knowledge_base, books, indexed_book_ids):
                                 # Display removal notification
                                 get_notification_manager().create_notification(
                                     message=f"Removed '{book['title']}' from knowledge base.",
-                                    level=get_notification_manager().NotificationLevel.INFO,
-                                    notification_type=get_notification_manager().NotificationType.GENERAL,
+                                    level=NotificationLevel.INFO,
+                                    notification_type=NotificationType.GENERAL,
                                     book_id=book['id'],
                                     book_title=book['title']
                                 )
                             else:
                                 st.error(f"Failed to remove '{book['title']}' from knowledge base.")
+                                # Reset the toggle state in session
+                                st.session_state[book_state_key] = True
                                 
                             time.sleep(1)  # Brief pause to show message
                             st.rerun()  # Refresh to update stats

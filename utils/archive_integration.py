@@ -197,11 +197,62 @@ class ArchiveOrgClient:
             r = requests.get(file_url, stream=True, timeout=60)
             r.raise_for_status()
             
-            # Stream download to file in chunks
+            # Stream download to file in chunks with proper size verification
+            expected_size = int(r.headers.get('content-length', 0))
+            downloaded_size = 0
+            
             with open(local_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
+                        downloaded_size += len(chunk)
+            
+            # Verify the downloaded file size matches the expected size
+            if expected_size > 0 and downloaded_size != expected_size:
+                error_message = f"Download incomplete: Expected {expected_size} bytes but got {downloaded_size} bytes"
+                logger.error(error_message)
+                
+                # Create notification for incomplete download
+                notification_manager.create_notification(
+                    message=f"Incomplete download for '{title or identifier}' from Archive.org",
+                    level=NotificationLevel.ERROR,
+                    notification_type=NotificationType.ARCHIVE_DOWNLOAD_ERROR,
+                    details=error_message
+                )
+                
+                # Clean up incomplete file
+                try:
+                    os.remove(local_path)
+                    logger.info(f"Removed incomplete download: {local_path}")
+                except Exception as e:
+                    logger.error(f"Could not remove incomplete file: {str(e)}")
+                
+                return None
+            
+            # Verify the file is readable/valid
+            try:
+                if local_path.lower().endswith('.pdf'):
+                    # For PDFs, open and check if readable
+                    import PyPDF2
+                    with open(local_path, 'rb') as pdf_file:
+                        try:
+                            pdf_reader = PyPDF2.PdfReader(pdf_file)
+                            if len(pdf_reader.pages) == 0:
+                                raise ValueError("PDF has no pages")
+                            # Check at least the first page is readable
+                            _ = pdf_reader.pages[0].extract_text()
+                        except Exception as pdf_error:
+                            error_message = f"Downloaded PDF is not valid: {str(pdf_error)}"
+                            logger.error(error_message)
+                            notification_manager.notify_archive_download_error(
+                                identifier=identifier,
+                                error_message=error_message
+                            )
+                            os.remove(local_path)
+                            return None
+            except ImportError:
+                # PyPDF2 not available, log but continue
+                logger.warning("PyPDF2 not available for PDF validation, skipping validation")
             
             logger.info(f"Downloaded book successfully: {local_path}")
             
