@@ -360,45 +360,15 @@ def render_book_management_page():
 # Render knowledge base page
 def render_knowledge_base_page():
     """Render the knowledge base page."""
-    st.title("Knowledge Base")
-    st.subheader("Search and explore your knowledge base")
+    # Import the knowledge base page module
+    from pages.knowledge_base import render_knowledge_base_page
     
-    # Search
-    st.header("Search")
-    query = st.text_input("Enter search query")
+    # Import book manager
+    from book_manager import BookManager
+    book_manager = BookManager()
     
-    if query:
-        with st.spinner("Searching..."):
-            from knowledge_base.search import search_knowledge_base
-            
-            results = search_knowledge_base(
-                query,
-                st.session_state.knowledge_base
-            )
-            
-            st.session_state.search_results = results
-    
-    # Display search results
-    if hasattr(st.session_state, "search_results") and st.session_state.search_results:
-        st.header(f"Search Results ({len(st.session_state.search_results)})")
-        
-        for i, result in enumerate(st.session_state.search_results):
-            with st.expander(f"Result {i+1} - Score: {result['score']:.2f}", expanded=i==0):
-                st.markdown(f"**Document ID:** {result['metadata']['document_id']}")
-                st.markdown(f"**Text:**")
-                st.text(result["text"])
-    
-    # Knowledge base stats
-    st.header("Knowledge Base Statistics")
-    kb_stats = st.session_state.knowledge_base.get_stats()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Documents", kb_stats.get("document_count", 0))
-    
-    with col2:
-        st.metric("Chunks", kb_stats.get("chunk_count", 0))
+    # Call the implemented knowledge base page with required arguments
+    render_knowledge_base_page(book_manager, st.session_state.knowledge_base)
 
 # Render chat page
 def render_chat_page():

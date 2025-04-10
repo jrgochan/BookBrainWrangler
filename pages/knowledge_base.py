@@ -250,50 +250,116 @@ def render_knowledge_base_operations(book_manager, knowledge_base):
                 except Exception as e:
                     st.error(f"Error rebuilding knowledge base: {str(e)}")
     
-    with col2:
-        if st.button("Export Knowledge Base", help="Export all knowledge base content as a markdown document"):
-            try:
-                # Generate the knowledge export
-                indexed_books = [book_manager.get_book(book_id) for book_id in knowledge_base.get_indexed_book_ids()]
-                
-                if not indexed_books:
-                    st.warning("No books in knowledge base to export.")
-                    return
-                
-                with st.spinner("Generating knowledge base export..."):
-                    # Generate markdown content for the knowledge base
-                    timestamp = time.strftime("%Y%m%d-%H%M%S")
-                    filename = f"knowledge_base_export_{timestamp}.md"
+    # Add a new section for enhanced export functionality
+    st.subheader("Export Knowledge Base")
+    
+    # Import export utilities
+    from utils.export_helpers import export_knowledge_base, EXPORT_FORMATS
+    
+    # Create UI for export options
+    export_format = st.selectbox(
+        "Export Format", 
+        list(EXPORT_FORMATS.keys()),
+        format_func=lambda x: EXPORT_FORMATS[x]["name"],
+        help="Select the format for exporting your knowledge base"
+    )
+    
+    # Content options
+    with st.expander("Export Options", expanded=True):
+        include_metadata = st.checkbox("Include Book Metadata", value=True, 
+                                      help="Include book titles, authors, and categories")
+        
+        include_content = st.checkbox("Include Content Chunks", value=True,
+                                     help="Include the actual text chunks from your knowledge base")
+        
+        include_embeddings = st.checkbox("Include Vector Embeddings", value=False,
+                                        help="Include vector embeddings (warning: can create large files)")
+        
+        # Show estimated export size based on options
+        kb_stats = knowledge_base.get_stats()
+        chunk_count = kb_stats.get('chunk_count', 0)
+        dimensions = kb_stats.get('dimensions', 0)
+        
+        # Calculate rough estimates
+        base_size_mb = 0.01  # Base size for metadata
+        content_size_mb = 0.0002 * chunk_count if include_content else 0  # Approx 200 bytes per chunk
+        embedding_size_mb = 0.000004 * chunk_count * dimensions if include_embeddings else 0  # Approx 4 bytes per dimension
+        
+        total_size_mb = base_size_mb + content_size_mb + embedding_size_mb
+        
+        # Show size estimate with appropriate unit
+        if total_size_mb < 1:
+            st.caption(f"Estimated export size: {total_size_mb * 1000:.0f} KB")
+        else:
+            st.caption(f"Estimated export size: {total_size_mb:.1f} MB")
+            
+        # Warning for large exports
+        if total_size_mb > 50:
+            st.warning("⚠️ This export may create a large file. Consider disabling embeddings or content for a smaller file.")
+    
+    # Export button
+    if st.button("Generate Export", key="generate_export_button", type="primary", help="Create and download the export file"):
+        try:
+            # Check if there are books in the knowledge base
+            indexed_book_ids = knowledge_base.get_indexed_book_ids()
+            
+            if not indexed_book_ids:
+                st.warning("No books in knowledge base to export.")
+                return
+            
+            # Create a progress container for the export
+            export_progress = st.progress(0, "Preparing export...")
+            export_status = st.empty()
+            
+            # Define progress callback
+            def update_export_progress(progress, message):
+                export_progress.progress(progress, message)
+                export_status.text(message)
+            
+            # Generate the export
+            with st.spinner(f"Generating {EXPORT_FORMATS[export_format]['name']} export..."):
+                try:
+                    # Show selected options for debugging
+                    debug_info = st.empty()
+                    debug_info.info(f"Exporting with options: Format={export_format}, Metadata={include_metadata}, Content={include_content}, Embeddings={include_embeddings}")
                     
-                    # Get a download link for the export
-                    markdown_content = "# Knowledge Base Export\n\n"
-                    markdown_content += f"*Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}*\n\n"
-                    
-                    # Add book information and contexts to the export
-                    for i, book in enumerate(indexed_books, 1):
-                        markdown_content += f"## {i}. {book['title']}\n"
-                        markdown_content += f"Author: {book['author']}\n\n"
-                        
-                        # Get a sample of the book content
-                        content = book_manager.get_book_content(book['id'])
-                        if content:
-                            # Truncate content if too long
-                            preview = content[:500] + "..." if len(content) > 500 else content
-                            markdown_content += "### Content Sample\n"
-                            markdown_content += f"{preview}\n\n"
-                        
-                        # Add separator between books
-                        markdown_content += "---\n\n"
-                    
-                    # Create a download button for the markdown content
-                    st.download_button(
-                        label="Download Export",
-                        data=markdown_content,
-                        file_name=filename,
-                        mime="text/markdown"
+                    # Call export function with options
+                    file_data, filename, mime_type = export_knowledge_base(
+                        book_manager, 
+                        knowledge_base,
+                        format_type=export_format,
+                        include_metadata=include_metadata,
+                        include_content=include_content,
+                        include_embeddings=include_embeddings,
+                        progress_callback=update_export_progress
                     )
                     
-                    st.success(f"Knowledge base exported as '{filename}'")
-            
-            except Exception as e:
-                st.error(f"Error exporting knowledge base: {str(e)}")
+                    # Create download button
+                    st.download_button(
+                        label=f"Download {EXPORT_FORMATS[export_format]['name']}",
+                        data=file_data,
+                        file_name=filename,
+                        mime=mime_type,
+                        key="kb_export_download"
+                    )
+                    
+                    # Success message
+                    st.success(f"Knowledge base exported successfully as {filename}")
+                    
+                    # Complete progress
+                    export_progress.progress(1.0, "Export complete!")
+                    export_status.text(f"Export complete! Click the download button above to save {filename}")
+                    
+                    # Remove debug info after success
+                    debug_info.empty()
+                    
+                except Exception as e:
+                    st.error(f"Error generating export: {str(e)}")
+                    st.error(f"Error details: {type(e).__name__}: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc(), language="python")
+                    export_progress.empty()
+                    export_status.empty()
+        
+        except Exception as e:
+            st.error(f"Error exporting knowledge base: {str(e)}")

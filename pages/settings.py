@@ -635,18 +635,68 @@ def render_knowledge_base_settings():
         # GPU settings for FAISS
         if vector_store_type == 'faiss':
             st.subheader("FAISS GPU Acceleration")
-            use_gpu = st.toggle(
-                "Use GPU acceleration (if available)",
-                value=current_settings.get('use_gpu', True),
-                help="Enable GPU acceleration for FAISS vector store. Only applies when running locally with CUDA-compatible GPU."
-            )
             
-            # Display notice about GPU acceleration
-            if use_gpu:
-                st.info(
-                    "GPU acceleration will be used if a compatible GPU is available. "
-                    "This setting has no effect if run in environments without a GPU."
+            # Check if FAISS GPU support is actually available
+            gpu_available = False
+            try:
+                import faiss
+                faiss_str = str(dir(faiss))
+                # Check specifically for the GpuIndexFlatConfig class which is only in GPU version
+                gpu_available = 'GpuIndexFlatConfig' in faiss_str
+            except Exception:
+                gpu_available = False
+                
+            # Display appropriate UI based on GPU availability
+            if gpu_available:
+                use_gpu = st.toggle(
+                    "Use GPU acceleration",
+                    value=current_settings.get('use_gpu', True),
+                    help="Enable GPU acceleration for FAISS vector store."
                 )
+                
+                if use_gpu:
+                    st.success("GPU acceleration is enabled and available.")
+                else:
+                    st.info("GPU acceleration is available but disabled. Toggle to enable.")
+            else:
+                # Disabled toggle with explanation
+                st.toggle(
+                    "Use GPU acceleration (not available)",
+                    value=False,
+                    disabled=True,
+                    help="GPU acceleration is not available because FAISS was installed without GPU support."
+                )
+                
+                # Show system status
+                st.warning(
+                    "FAISS GPU support is not available on this system. "
+                    "You are using the CPU-only version of FAISS."
+                )
+                
+                # Show help for installing GPU support
+                with st.expander("How to enable GPU support"):
+                    st.markdown("""
+                    To enable GPU support for FAISS:
+                    
+                    1. Install NVIDIA CUDA Toolkit (10.0 or newer)
+                    2. Uninstall the CPU version of FAISS:
+                       ```
+                       pip uninstall -y faiss-cpu faiss
+                       ```
+                    3. Install the GPU version of FAISS:
+                       ```
+                       pip install faiss-gpu
+                       ```
+                    4. Restart the application
+                    
+                    Run the diagnostic script to check your GPU setup:
+                    ```
+                    python scripts/check_faiss_gpu.py
+                    ```
+                    """)
+                
+                # Force use_gpu to False when not available
+                use_gpu = False
         else:
             use_gpu = current_settings.get('use_gpu', True)
         
@@ -722,12 +772,12 @@ def render_knowledge_base_settings():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Rebuild Knowledge Base", key="rebuild_kb", use_container_width=True, type="primary"):
+        if st.button("Rebuild Knowledge Base", key="rebuild_kb_button", use_container_width=True, type="primary"):
             st.session_state.rebuild_kb = True
             st.success("Knowledge base rebuild scheduled! This will happen when you return to the Knowledge Base page.")
     
     with col2:
-        if st.button("Reset Knowledge Base", key="reset_kb", use_container_width=True, type="secondary"):
+        if st.button("Reset Knowledge Base", key="reset_kb_button", use_container_width=True, type="secondary"):
             st.session_state.reset_kb = True
             st.warning("Knowledge base reset scheduled! This will delete all vector data when you return to the Knowledge Base page.")
 

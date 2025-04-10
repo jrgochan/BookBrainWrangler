@@ -249,3 +249,203 @@ class VectorStore:
             return self.vector_store.use_gpu
         # Fall back to the stored attribute if the vector store doesn't have the property
         return getattr(self, 'gpu_enabled', True)
+        
+    def get_indexed_book_ids(self) -> List[str]:
+        """
+        Get the IDs of all books/documents indexed in the knowledge base.
+        
+        Returns:
+            List of document IDs
+        """
+        documents = self.list_documents()
+        # Extract unique document IDs from the documents
+        book_ids = []
+        seen_ids = set()
+        
+        for doc in documents:
+            doc_id = doc.get('id')
+            if doc_id and doc_id not in seen_ids:
+                book_ids.append(doc_id)
+                seen_ids.add(doc_id)
+        
+        return book_ids
+        
+    def get_document_chunks(self, document_id: str) -> List[Any]:
+        """
+        Get all chunks for a specific document.
+        
+        Args:
+            document_id: Document ID
+            
+        Returns:
+            List of chunks for the document
+        """
+        # Get all chunks where the document_id matches
+        results = self.get(where={"document_id": document_id})
+        
+        # Extract chunks from results
+        chunks = []
+        if results and "documents" in results:
+            for i, doc in enumerate(results["documents"]):
+                # Create a chunk object with page_content
+                chunk = type('Chunk', (), {})()
+                chunk.page_content = doc
+                
+                # Add metadata if available
+                if "metadatas" in results and i < len(results["metadatas"]):
+                    for key, value in results["metadatas"][i].items():
+                        setattr(chunk, key, value)
+                
+                # Add ID if available
+                if "ids" in results and i < len(results["ids"]):
+                    chunk.id = results["ids"][i]
+                
+                chunks.append(chunk)
+        
+        return chunks
+        
+    def toggle_book_in_knowledge_base(
+        self, 
+        book_id: str, 
+        content: Optional[str] = None, 
+        add_to_kb: bool = True,
+        progress_callback: Optional[Callable[[float, int, str], None]] = None
+    ) -> bool:
+        """
+        Toggle a book's inclusion in the knowledge base.
+        
+        Args:
+            book_id: Book ID
+            content: Book content (required if adding to KB)
+            add_to_kb: True to add to KB, False to remove
+            progress_callback: Optional callback for progress updates
+            
+        Returns:
+            True if operation was successful
+        """
+        if add_to_kb:
+            if not content:
+                logger.error(f"Cannot add book {book_id} to knowledge base: no content provided")
+                return False
+                
+            # Add document to knowledge base
+            try:
+                self.add_document(
+                    document_id=book_id,
+                    text=content
+                )
+                logger.info(f"Added book {book_id} to knowledge base")
+                return True
+            except Exception as e:
+                logger.error(f"Error adding book {book_id} to knowledge base: {str(e)}")
+                return False
+        else:
+            # Remove document from knowledge base
+            try:
+                success = self.delete_document(book_id)
+                if success:
+                    logger.info(f"Removed book {book_id} from knowledge base")
+                else:
+                    logger.error(f"Failed to remove book {book_id} from knowledge base")
+                return success
+            except Exception as e:
+                logger.error(f"Error removing book {book_id} from knowledge base: {str(e)}")
+                return False
+                
+    def rebuild_knowledge_base(
+        self, 
+        book_manager: Any,
+        progress_callback: Optional[Callable[[float, int, str], None]] = None
+    ) -> bool:
+        """
+        Rebuild the knowledge base from scratch.
+        
+        Args:
+            book_manager: BookManager instance
+            progress_callback: Optional callback for progress updates
+            
+        Returns:
+            True if successful
+        """
+        try:
+            # Reset the vector store
+            self.reset()
+            logger.info("Vector store reset")
+            
+            # Get all books
+            indexed_book_ids = self.get_indexed_book_ids()
+            
+            # Re-add each book
+            total_books = len(indexed_book_ids)
+            for i, book_id in enumerate(indexed_book_ids):
+                # Get book details
+                book = book_manager.get_book(book_id)
+                
+                if not book:
+                    logger.warning(f"Book {book_id} not found in book manager")
+                    continue
+                
+                # Get book content
+                content = book_manager.get_book_content(book_id)
+                
+                if not content:
+                    logger.warning(f"No content found for book {book_id}")
+                    continue
+                
+                # Update progress
+                if progress_callback:
+                    progress = (i / total_books)
+                    progress_callback(progress, i, f"Processing book {i+1}/{total_books}: {book['title']}")
+                
+                # Add to vector store
+                self.add_document(
+                    document_id=book_id,
+                    text=content,
+                    metadata=book
+                )
+                
+                logger.info(f"Re-added book {book_id} to knowledge base")
+            
+            # Final progress update
+            if progress_callback:
+                progress_callback(1.0, total_books, "Knowledge base rebuild complete")
+                
+            logger.info("Knowledge base rebuilt successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error rebuilding knowledge base: {str(e)}")
+            return False
+            
+    def get_vector_store_stats(self) -> Dict[str, Any]:
+        """
+        Get vector store statistics.
+        
+        Returns:
+            Dictionary of statistics
+        """
+        return self.get_stats()
+        
+    def retrieve_relevant_context(self, query: str, num_results: int = 5) -> str:
+        """
+        Retrieve relevant context for a query.
+        
+        Args:
+            query: The query string
+            num_results: Maximum number of results to return
+            
+        Returns:
+            A string containing the relevant context
+        """
+        try:
+            results = self.search(query, limit=num_results)
+            
+            # Concatenate the results into a single context string
+            context_parts = []
+            for result in results:
+                context_parts.append(result.get('text', ''))
+                
+            return '\n\n'.join(context_parts)
+        except Exception as e:
+            logger.error(f"Error retrieving context for query '{query}': {str(e)}")
+            return ""

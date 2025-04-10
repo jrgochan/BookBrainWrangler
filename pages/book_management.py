@@ -686,7 +686,7 @@ def render_edit_modal(book_manager):
                 st.subheader("AI Analysis & Insights")
                 
                 # Import Ollama client
-                from ollama import OllamaClient
+                from ai.ollama import OllamaClient
                 
                 # Initialize Ollama client
                 ollama_client = OllamaClient()
