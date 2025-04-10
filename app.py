@@ -189,104 +189,131 @@ def render_book_management_page():
             # Display the console (will update in real-time)
             console_placeholder = st.empty()
             
-            # Process document
-            with st.spinner("Processing document..."):
-                try:
-                    # Save uploaded file
-                    add_log("Saving uploaded file...")
-                    file_path = st.session_state.document_processor.save_uploaded_file(uploaded_file)
-                    add_log(f"File saved to: {file_path}", "SUCCESS")
+            # Create progress bar placeholder
+            progress_bar_placeholder = st.empty()
+            progress_percent = 0
+            
+            try:
+                # Save uploaded file
+                add_log("Saving uploaded file...")
+                file_path = st.session_state.document_processor.save_uploaded_file(uploaded_file)
+                add_log(f"File saved to: {file_path}", "SUCCESS")
+                
+                # Update console
+                with console_placeholder.container():
+                    render_console(st.session_state.processing_logs, title="Processing Log")
+                
+                # Initialize progress bar at 10%
+                progress_percent = 10
+                progress_bar_placeholder.progress(progress_percent / 100, f"Processing: {progress_percent}% complete")
+                
+                # Process document with detailed logging
+                add_log(f"Starting document processing: {file_path}")
+                
+                # Create a wrapper for the progress callback to update both the logs and progress bar
+                def combined_progress_callback(progress, message):
+                    # Update logs with the original callback
+                    progress_callback(progress, message)
                     
-                    # Update console
-                    with console_placeholder.container():
-                        render_console(st.session_state.processing_logs, title="Processing Log")
+                    # Update progress bar (scale from 10% to 90%)
+                    nonlocal progress_percent
+                    progress_percent = 10 + int(progress * 80)
+                    progress_bar_placeholder.progress(progress_percent / 100, f"Processing: {progress_percent}% complete")
+                
+                # Process document with combined progress callback
+                result = st.session_state.document_processor.process_document(
+                    file_path,
+                    include_images=True,
+                    ocr_enabled=False,
+                    progress_callback=combined_progress_callback
+                )
+                
+                # Update console after processing
+                with console_placeholder.container():
+                    render_console(st.session_state.processing_logs, title="Processing Log")
+                
+                # Set progress to 90%
+                progress_percent = 90
+                progress_bar_placeholder.progress(progress_percent / 100, f"Processing: {progress_percent}% complete")
                     
-                    # Process document with detailed logging
-                    add_log(f"Starting document processing: {file_path}")
-                    
-                    # Process document with progress callback
-                    result = st.session_state.document_processor.process_document(
-                        file_path,
-                        include_images=True,
-                        ocr_enabled=False,
-                        progress_callback=progress_callback
-                    )
-                    
-                    # Update console again
-                    with console_placeholder.container():
-                        render_console(st.session_state.processing_logs, title="Processing Log")
-                    
-                    # Add processing completion log
-                    add_log(f"Document processing complete: {len(result.get('text', ''))} characters of text extracted", "SUCCESS")
-                    
-                    if 'images' in result and result['images']:
-                        add_log(f"Extracted {len(result['images'])} images from document", "SUCCESS")
-                    
-                    # Add metadata extraction details
-                    if 'metadata' in result and result['metadata']:
-                        metadata = result['metadata']
-                        add_log(f"Extracted metadata: Title='{metadata.get('title', 'Unknown')}', Author='{metadata.get('author', 'Unknown')}'")
-                    
-                    # Add to processing results
-                    st.session_state.processing_results[file_path] = result
-                    add_log("Document added to processing results")
-                    
-                    # Add to knowledge base
-                    add_log("Generating document ID...")
-                    doc_id = st.session_state.knowledge_base.generate_id()
-                    add_log(f"Document ID generated: {doc_id}")
-                    
-                    add_log("Adding document to knowledge base...")
-                    st.session_state.knowledge_base.add_document(
-                        doc_id,
-                        result.get("text", ""),
-                        result.get("metadata", {})
-                    )
-                    add_log("Document successfully added to knowledge base", "SUCCESS")
-                    
-                    # Update console one last time
-                    with console_placeholder.container():
-                        render_console(st.session_state.processing_logs, title="Processing Log")
-                    
-                    # Final success message
-                    st.success(f"Document '{uploaded_file.name}' processed and added to knowledge base.")
-                    
-                    # Display document preview
-                    st.subheader("Document Preview")
-                    
-                    # Show metadata
-                    if "metadata" in result and result["metadata"]:
-                        st.json(result["metadata"])
-                    else:
-                        st.info("No metadata extracted from document")
-                    
-                    # Show text preview
-                    if "text" in result and result["text"]:
-                        with st.expander("Text Preview"):
-                            preview_text = result["text"][:1000] + "..." if len(result["text"]) > 1000 else result["text"]
-                            st.text(preview_text)
-                    
-                    # Show image preview if available
-                    if "images" in result and result["images"]:
-                        with st.expander(f"Images ({len(result['images'])})"):
-                            cols = st.columns(3)
-                            for i, img in enumerate(result["images"]):
-                                if "data" in img:
-                                    col_idx = i % 3
-                                    with cols[col_idx]:
-                                        st.image(f"data:image/{img.get('format', 'jpeg')};base64,{img['data']}", 
-                                                caption=f"Page {img.get('page', i+1)}",
-                                                width=200)
-                    
-                except Exception as e:
-                    error_msg = f"Error processing document: {str(e)}"
-                    add_log(error_msg, "ERROR")
-                    st.error(error_msg)
-                    logger.error(error_msg)
-                    
-                    # Update console to show the error
-                    with console_placeholder.container():
-                        render_console(st.session_state.processing_logs, title="Processing Log")
+                # Add processing completion log
+                add_log(f"Document processing complete: {len(result.get('text', ''))} characters of text extracted", "SUCCESS")
+                
+                if 'images' in result and result['images']:
+                    add_log(f"Extracted {len(result['images'])} images from document", "SUCCESS")
+                
+                # Add metadata extraction details
+                if 'metadata' in result and result['metadata']:
+                    metadata = result['metadata']
+                    add_log(f"Extracted metadata: Title='{metadata.get('title', 'Unknown')}', Author='{metadata.get('author', 'Unknown')}'")
+                
+                # Add to processing results
+                st.session_state.processing_results[file_path] = result
+                add_log("Document added to processing results")
+                
+                # Add to knowledge base - update progress to 95%
+                progress_percent = 95
+                progress_bar_placeholder.progress(progress_percent / 100, f"Processing: {progress_percent}% complete")
+                
+                add_log("Generating document ID...")
+                doc_id = st.session_state.knowledge_base.generate_id()
+                add_log(f"Document ID generated: {doc_id}")
+                
+                add_log("Adding document to knowledge base...")
+                st.session_state.knowledge_base.add_document(
+                    doc_id,
+                    result.get("text", ""),
+                    result.get("metadata", {})
+                )
+                add_log("Document successfully added to knowledge base", "SUCCESS")
+                
+                # Complete progress bar - 100%
+                progress_percent = 100
+                progress_bar_placeholder.progress(progress_percent / 100, "Processing complete!")
+                
+                # Update console one last time
+                with console_placeholder.container():
+                    render_console(st.session_state.processing_logs, title="Processing Log")
+                
+                # Final success message
+                st.success(f"Document '{uploaded_file.name}' processed and added to knowledge base.")
+                
+                # Display document preview
+                st.subheader("Document Preview")
+                
+                # Show metadata
+                if "metadata" in result and result["metadata"]:
+                    st.json(result["metadata"])
+                else:
+                    st.info("No metadata extracted from document")
+                
+                # Show text preview
+                if "text" in result and result["text"]:
+                    with st.expander("Text Preview"):
+                        preview_text = result["text"][:1000] + "..." if len(result["text"]) > 1000 else result["text"]
+                        st.text(preview_text)
+                
+                # Show image preview if available
+                if "images" in result and result["images"]:
+                    with st.expander(f"Images ({len(result['images'])})"):
+                        cols = st.columns(3)
+                        for i, img in enumerate(result["images"]):
+                            if "data" in img:
+                                col_idx = i % 3
+                                with cols[col_idx]:
+                                    st.image(f"data:image/{img.get('format', 'jpeg')};base64,{img['data']}", 
+                                            caption=f"Page {img.get('page', i+1)}",
+                                            width=200)
+                
+            except Exception as e:
+                error_msg = f"Error processing document: {str(e)}"
+                add_log(error_msg, "ERROR")
+                st.error(error_msg)
+                logger.error(error_msg)
+                
+                # Update console to show the error
+                with console_placeholder.container():
+                    render_console(st.session_state.processing_logs, title="Processing Log")
         
         # Show processing log even when not actively processing
         if st.session_state.processing_logs:
