@@ -49,7 +49,22 @@ class ChromaEmbeddingFunction(embedding_functions.EmbeddingFunction):
             return []
             
         # Generate embeddings
-        embeddings = [self.embedding_func(text) for text in input]
+        embeddings = []
+        for text in input:
+            # Get the embedding vector
+            embedding_obj = self.embedding_func(text)
+            # Extract the actual embedding array
+            if hasattr(embedding_obj, 'embedding'):
+                embeddings.append(embedding_obj.embedding)
+            elif isinstance(embedding_obj, list):
+                embeddings.append(embedding_obj)
+            else:
+                # Try to access as a dict
+                try:
+                    embeddings.append(embedding_obj.get('embedding', embedding_obj))
+                except:
+                    # If all else fails, use the object directly
+                    embeddings.append(embedding_obj)
         
         return embeddings
 
