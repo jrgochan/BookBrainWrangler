@@ -82,6 +82,10 @@ def render_sidebar():
             st.session_state.current_page = "book_management"
             st.rerun()
         
+        if st.button("📖 Internet Archive Search", key="sidebar_archive_btn", use_container_width=True):
+            st.session_state.current_page = "archive_search"
+            st.rerun()
+        
         if st.button("🔍 Knowledge Base", key="sidebar_kb_btn", use_container_width=True):
             st.session_state.current_page = "knowledge_base"
             st.rerun()
@@ -119,19 +123,24 @@ def render_home_page():
     This application allows you to:
     
     - **Upload and process** books and documents
+    - **Search the Internet Archive** for books to add to your collection
     - **Extract knowledge** from your document collection
     - **Search and explore** your knowledge base
     - **Chat with AI** about your documents
     
-    Get started by uploading documents in the Knowledge Management section.
+    Get started by uploading documents in the Knowledge Management section or search for books in the Internet Archive.
     """)
     
     # Quick access buttons
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
         if st.button("📄 Manage Documents", key="home_manage_docs_btn", use_container_width=True):
             st.session_state.current_page = "book_management"
+            st.rerun()
+    
+        if st.button("📖 Search Internet Archive", key="home_archive_btn", use_container_width=True):
+            st.session_state.current_page = "archive_search"
             st.rerun()
     
     with col2:
@@ -139,7 +148,6 @@ def render_home_page():
             st.session_state.current_page = "knowledge_base"
             st.rerun()
     
-    with col3:
         if st.button("💬 Chat with AI", key="home_chat_btn", use_container_width=True):
             st.session_state.current_page = "chat"
             st.rerun()
@@ -389,6 +397,15 @@ def render_settings_page():
     from pages.settings import settings_page
     settings_page()
 
+# Render Internet Archive search page
+def render_archive_search_page():
+    """Render the Internet Archive search page."""
+    # Import the archive search page module
+    from pages.archive_search import render_archive_search_page
+    
+    # Call the implemented archive search page
+    render_archive_search_page()
+
 # Main application
 def main():
     """Main application function."""
@@ -404,6 +421,8 @@ def main():
             render_home_page()
         elif st.session_state.current_page == "book_management":
             render_book_management_page()
+        elif st.session_state.current_page == "archive_search":
+            render_archive_search_page()
         elif st.session_state.current_page == "knowledge_base":
             render_knowledge_base_page()
         elif st.session_state.current_page == "chat":

@@ -258,7 +258,8 @@ def download_and_process_book(
         )
         
         # Store the file hash for future duplicate detection
-        archive_client.store_file_hash(book_id, file_hash)
+        if book_id is not None:  # Make sure book_id is not None before storing hash
+            archive_client.store_file_hash(book_id, file_hash)
         
         progress_bar.progress(90)
         add_log(f"Book added to manager with ID: {book_id}", "SUCCESS")

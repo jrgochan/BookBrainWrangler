@@ -270,12 +270,15 @@ class ArchiveOrgClient:
         Store a file hash in the database for duplicate detection.
         
         Args:
-            book_id: Book ID
+            book_id: Book ID (must be a valid integer)
             file_hash: MD5 hash of the file
             
         Returns:
             True if successful, False otherwise
         """
+        if book_id is None:
+            logger.error("Cannot store file hash: book_id is None")
+            return False
         logger.debug(f"Storing file hash for book ID {book_id}: {file_hash}")
         
         # First, check if we need to create the file_hashes table
