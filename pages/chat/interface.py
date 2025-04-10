@@ -166,13 +166,13 @@ class ChatInterface:
         if context_strategy == KNOWLEDGE_SOURCES["model_knowledge"]:
             # Use chat endpoint for model knowledge mode
             logger.debug("Using chat endpoint for model knowledge mode")
-            ai_response = self.ollama_client.chat(
+            ai_response = self.ollama_client.generate_chat_response(
                 messages=formatted_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 model=model_to_use
             )
-            response_text = ai_response.get("content", "Error retrieving response")
+            response_text = ai_response
         else:
             # For book knowledge or combined mode, use generate endpoint with context
             logger.debug("Using generate endpoint with context")

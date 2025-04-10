@@ -28,7 +28,7 @@ class OllamaClient(AIClient):
     def __init__(self, 
                  host: Optional[str] = None, 
                  port: Optional[int] = None, 
-                 model: str = "llama2",
+                 model: str = "llama2:7b",
                  **kwargs):
         """
         Initialize the Ollama client.
@@ -242,6 +242,31 @@ class OllamaClient(AIClient):
             
             formatted_messages.append({"role": role, "content": content})
         
+        # Define preferred fallback models in order of preference
+        preferred_fallbacks = ['llama2:7b', 'llama2', 'llama2:13b']
+        fallback_models = []
+        
+        try:
+            available_models = self.list_models()
+            
+            # First, always try the requested model first
+            fallback_models = [model]
+            
+            # Then add preferred fallbacks if they're available and not already the requested model
+            for preferred in preferred_fallbacks:
+                if preferred in available_models and preferred != model:
+                    fallback_models.append(preferred)
+            
+            # As a last resort, add other available models
+            for available in available_models:
+                if available not in fallback_models:
+                    fallback_models.append(available)
+                
+        except Exception as e:
+            logger.warning(f"Could not fetch available models for fallback: {str(e)}")
+            # If we can't get available models, just use the requested model and preferred fallbacks
+            fallback_models = [model] + [f for f in preferred_fallbacks if f != model]
+            
         # Prepare the request payload
         payload = {
             "model": model,
@@ -258,21 +283,42 @@ class OllamaClient(AIClient):
             if k not in ['model', 'messages', 'stream', 'context']:
                 payload[k] = v
         
-        try:
-            logger.debug(f"Generating chat response with model={model}, temp={temperature}")
+        # Try with the requested model first, then fall back to alternatives if needed
+        last_error = None
+        for fallback_model in fallback_models:
+            try:
+                # Update the model in the payload
+                payload["model"] = fallback_model
+                
+                logger.debug(f"Generating chat response with model={fallback_model}, temp={temperature}")
+                
+                response = requests.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                # If we're using a fallback model, log a warning
+                if fallback_model != model:
+                    logger.warning(f"Used fallback model {fallback_model} instead of {model}")
+                
+                return data.get('message', {}).get('content', '')
+            except Exception as e:
+                logger.error(f"Error generating chat response with model {fallback_model}: {str(e)}")
+                last_error = e
+                # Continue to the next fallback model
+        
+        # If we've tried all fallbacks and failed
+        if last_error:
+            error_msg = f"Failed to generate chat response with all available models: {str(last_error)}"
+            logger.error(error_msg)
+            raise ResponseGenerationError(error_msg)
             
-            response = requests.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            return data.get('message', {}).get('content', '')
-        except Exception as e:
-            logger.error(f"Error generating chat response: {str(e)}")
-            raise ResponseGenerationError(f"Failed to generate chat response: {str(e)}")
+        # This shouldn't happen but just in case
+        raise ResponseGenerationError("Failed to generate chat response: No models available")
     
     def create_embedding(self, text: str, model: Optional[str] = None) -> EmbeddingVector:
         """

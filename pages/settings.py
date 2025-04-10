@@ -46,7 +46,7 @@ def render_ai_settings():
     if 'ai_settings' not in st.session_state:
         st.session_state.ai_settings = {
             'client_type': 'ollama',
-            'model': 'llama2',
+            'model': 'llama2:7b',
             'api_base': 'http://localhost:11434',
             'temperature': 0.7,
             'max_tokens': 4096,
@@ -413,10 +413,7 @@ def render_ocr_settings():
     """Render OCR settings section."""
     st.header("OCR Settings")
     
-    # Import OCR engines from the document_processing package
-    from document_processing.ocr import OCR_ENGINES as _OCR_ENGINES
-    
-    # Create a copy with user-friendly labels
+    # Define OCR engines with user-friendly labels
     OCR_ENGINES = {
         "pytesseract": "PyTesseract (Default)",
         "easyocr": "EasyOCR (Advanced)"

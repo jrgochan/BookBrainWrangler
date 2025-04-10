@@ -151,6 +151,7 @@ class DOCXProcessor:
             Dictionary with extracted text
         """
         if not DOCX_AVAILABLE:
+            logger.error("DOCX processing not available - python-docx module missing")
             return {'text': ''}
         
         try:
@@ -158,34 +159,83 @@ class DOCXProcessor:
             paragraphs = document.paragraphs
             total_paragraphs = len(paragraphs)
             
+            logger.info(f"Starting text extraction from DOCX with {total_paragraphs} paragraphs and {len(document.tables)} tables")
+            
             # Extract text from paragraphs
             text_parts = []
             for i, paragraph in enumerate(paragraphs):
                 # Update progress
                 if progress_callback:
-                    progress_callback(i / total_paragraphs, f"Extracting text from paragraph {i+1}/{total_paragraphs}")
+                    try:
+                        # Ensure i and total_paragraphs are properly converted to float
+                        i_float = float(i)
+                        # Ensure total_paragraphs is a number and not a string
+                        if isinstance(total_paragraphs, str):
+                            logger.debug(f"total_paragraphs is a string: '{total_paragraphs}', converting to int")
+                            total_para_num = float(int(total_paragraphs))
+                        else:
+                            total_para_num = float(total_paragraphs)
+                            
+                        # Calculate progress - use 1.0 if we can't determine valid progress
+                        if total_para_num > 0:
+                            progress_fraction = i_float / total_para_num
+                        else:
+                            progress_fraction = 0.0
+                            
+                        progress_callback(progress_fraction, f"Extracting text from paragraph {i+1}/{total_paragraphs}")
+                    except Exception as e:
+                        # Don't let progress reporting stop the extraction
+                        logger.debug(f"Progress callback error: {str(e)}")
+                        logger.debug(f"Progress callback error details - i: {type(i)}={i}, total_paragraphs: {type(total_paragraphs)}={total_paragraphs}")
                 
                 # Add paragraph text
-                text_parts.append(paragraph.text)
+                para_text = paragraph.text
+                logger.debug(f"Paragraph {i+1} text: {para_text[:50]}{'...' if len(para_text) > 50 else ''}")
+                if para_text.strip():  # Only add non-empty paragraphs
+                    text_parts.append(para_text)
+            
+            logger.info(f"Extracted {len(text_parts)} non-empty paragraphs")
             
             # Get tables content
+            table_parts = []
             for i, table in enumerate(document.tables):
-                for row in table.rows:
+                logger.debug(f"Processing table {i+1} with {len(table.rows)} rows")
+                for row_idx, row in enumerate(table.rows):
                     row_text = []
                     for cell in row.cells:
-                        row_text.append(cell.text)
-                    text_parts.append(' | '.join(row_text))
+                        # For each cell, also process paragraphs within it
+                        cell_text = cell.text.strip()
+                        if cell_text:
+                            row_text.append(cell_text)
+                    
+                    if row_text:  # Only add non-empty rows
+                        table_text = ' | '.join(row_text)
+                        logger.debug(f"Table {i+1}, Row {row_idx+1}: {table_text[:50]}{'...' if len(table_text) > 50 else ''}")
+                        table_parts.append(table_text)
             
-            # Join all text parts
+            logger.info(f"Extracted {len(table_parts)} non-empty table rows")
+            
+            # Add table parts to text parts
+            text_parts.extend(table_parts)
+            
+            # Join all text parts with double newlines
             full_text = '\n\n'.join(text_parts)
             
-            # Log success
-            logger.info(f"Extracted text from {total_paragraphs} paragraphs")
+            # Log success with character count
+            char_count = len(full_text)
+            logger.info(f"Extracted text from DOCX: {char_count} characters from {len(text_parts)} text parts")
+            
+            if char_count == 0:
+                logger.warning("DOCX text extraction produced 0 characters - this may indicate an issue with the document format or content")
+            
             return {'text': full_text.strip()}
             
         except Exception as e:
+            import traceback
             logger.error(f"Error extracting text from DOCX: {str(e)}")
-            return {'text': ''}
+            logger.error(f"Error traceback: {traceback.format_exc()}")
+            # Return empty text but with error indicator
+            return {'text': '', 'error': str(e)}
     
     def extract_images(
         self,
@@ -215,7 +265,18 @@ class DOCXProcessor:
             # Find image relationships
             for rel in doc_part.rels.values():
                 if rel.reltype == RT.IMAGE:
-                    image_parts.append(rel.target_part)
+                    try:
+                        # Check if this is an internal or external image
+                        if hasattr(rel, 'target_mode') and rel.target_mode == 'External':
+                            logger.debug(f"Found external image reference: {rel.target_ref}")
+                            # Skip external images for now as they require special handling
+                            continue
+                        else:
+                            # This is an internal image
+                            image_parts.append(rel.target_part)
+                    except Exception as e:
+                        logger.debug(f"Skipping problematic image relationship: {str(e)}")
+                        continue
             
             # Extract images
             images = []
@@ -223,8 +284,13 @@ class DOCXProcessor:
             
             for i, image_part in enumerate(image_parts):
                 # Update progress
-                if progress_callback:
-                    progress_callback(i / total_images, f"Extracting image {i+1}/{total_images}")
+                if progress_callback and total_images > 0:
+                    try:
+                        i_float = float(i)
+                        total_float = float(total_images)
+                        progress_callback(i_float / total_float, f"Extracting image {i+1}/{total_images}")
+                    except Exception as e:
+                        logger.debug(f"Progress callback error in image extraction: {str(e)}")
                 
                 # Get image data
                 image_data = image_part.blob

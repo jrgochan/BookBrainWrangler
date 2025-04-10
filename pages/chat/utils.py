@@ -17,11 +17,11 @@ def get_current_model() -> str:
     """
     try:
         if isinstance(st.session_state.ollama_settings, dict):
-            return st.session_state.ollama_settings.get('model', 'llama2')
-        return 'llama2'
+            return st.session_state.ollama_settings.get('model', 'llama2:7b')
+        return 'llama2:7b'
     except Exception as e:
         logger.warning(f"Error retrieving current model: {str(e)}")
-        return 'llama2'
+        return 'llama2:7b'
         
 def retrieve_context(
     knowledge_base: Any, 

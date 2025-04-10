@@ -155,15 +155,33 @@ class DocumentProcessor:
             logger.error(error_msg)
             raise DocumentFormatError(error_msg)
         
+        # Log the file info
+        file_size = file.seek(0, os.SEEK_END)
+        file.seek(0)  # Reset file pointer to beginning
+        logger.info(f"Processing uploaded file: {filename}, format: {ext}, size: {file_size} bytes")
+        
         # Create a temporary file
         try:
             with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as temp:
                 # Write uploaded file to temp file
                 file.seek(0)
-                temp.write(file.read())
+                content = file.read()
+                temp.write(content)
                 temp_path = temp.name
+                
+                logger.info(f"Saved uploaded file to temporary path: {temp_path}, size: {len(content)} bytes")
+                
+                # For DOCX files, let's check if the file looks valid
+                if ext in ['docx', 'doc']:
+                    if len(content) < 100:
+                        logger.warning(f"DOCX file is suspiciously small ({len(content)} bytes). May be corrupted.")
+                    
+                    # Check for DOCX signature (PKZip)
+                    if not content.startswith(b'PK'):
+                        logger.warning(f"DOCX file doesn't have the correct signature. May not be a valid DOCX file.")
             
             # Process the temporary file
+            logger.info(f"Starting processing of temporary file: {temp_path}")
             result = self.process_file(
                 temp_path,
                 extract_images=extract_images,
@@ -171,12 +189,28 @@ class DocumentProcessor:
                 progress_callback=progress_callback
             )
             
+            # Log the extraction results
+            text_length = len(result.get('text', ''))
+            images_count = len(result.get('images', []))
+            logger.info(f"Extraction results: {text_length} characters of text, {images_count} images")
+            
+            # For debugging: if no text was extracted, provide extra details
+            if text_length == 0:
+                logger.warning(f"No text was extracted from {filename}. Check if file is corrupted or empty.")
+                if ext in ['docx', 'doc']:
+                    logger.info("For DOCX files with 0 characters, check if:") 
+                    logger.info("1. The file is password-protected")
+                    logger.info("2. The file contains only images or is a scanned document")
+                    logger.info("3. The file is corrupted or in an unsupported format")
+            
             # Update metadata
             result['filename'] = filename
+            result['original_size'] = file_size
             
             # Delete temporary file
             try:
                 os.unlink(temp_path)
+                logger.debug(f"Deleted temporary file: {temp_path}")
             except Exception as e:
                 logger.warning(f"Could not delete temporary file {temp_path}: {str(e)}")
             
@@ -193,7 +227,18 @@ class DocumentProcessor:
             # Handle error
             error_msg = f"Error processing uploaded file {filename}: {str(e)}"
             logger.error(error_msg)
-            raise DocumentProcessingError(error_msg) from e
+            import traceback
+            logger.error(f"Error traceback: {traceback.format_exc()}")
+            
+            # Create a result with error information
+            result = {
+                'text': '',
+                'images': [],
+                'error': str(e),
+                'filename': filename,
+                'format': ext
+            }
+            return result
     
     def get_supported_formats(self) -> List[str]:
         """

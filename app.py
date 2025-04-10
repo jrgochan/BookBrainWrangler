@@ -60,7 +60,7 @@ def init_session_state():
                 "max_tokens": 1000,
                 "use_context": True,
                 "context_strategy": "relevant",
-                "model": "llama2"  # Default model
+                "model": "llama2:7b"  # Default model
             }
         
         logger.info("Session state initialized")
