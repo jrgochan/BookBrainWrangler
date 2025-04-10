@@ -360,6 +360,76 @@ class BookManager:
         finally:
             conn.close()
     
+    def update_book_content(self, book_id, content):
+        """
+        Update the text content of an existing book.
+        
+        Args:
+            book_id: The ID of the book to update
+            content: The new text content
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Updating content for book ID {book_id}")
+        start_time = time.time()
+        
+        if not content:
+            logger.warning(f"Attempted to update book ID {book_id} with empty content")
+            return False
+            
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Check if book exists
+            cursor.execute("SELECT title FROM books WHERE id = ?", (book_id,))
+            book = cursor.fetchone()
+            
+            if not book:
+                logger.warning(f"Attempted to update content for nonexistent book ID {book_id}")
+                return False
+            
+            # Check if content entry exists
+            cursor.execute("SELECT 1 FROM book_contents WHERE book_id = ?", (book_id,))
+            content_exists = cursor.fetchone() is not None
+            
+            if content_exists:
+                # Update existing content
+                logger.debug(f"Updating existing content for book ID {book_id}")
+                cursor.execute(
+                    "UPDATE book_contents SET content = ? WHERE book_id = ?",
+                    (content, book_id)
+                )
+            else:
+                # Insert new content
+                logger.debug(f"Creating new content entry for book ID {book_id}")
+                cursor.execute(
+                    "INSERT INTO book_contents (book_id, content) VALUES (?, ?)",
+                    (book_id, content)
+                )
+            
+            conn.commit()
+            
+            # Add notification
+            notification_manager = get_notification_manager()
+            notification_manager.add_notification(
+                title="Book Content Updated",
+                message=f"Content for '{book[0]}' has been updated",
+                level=NotificationLevel.INFO,
+                type=NotificationType.BOOK_UPDATED
+            )
+            
+            logger.info(f"Book content updated for ID {book_id} in {time.time() - start_time:.2f}s")
+            return True
+            
+        except sqlite3.Error as e:
+            conn.rollback()
+            logger.error(f"Database error while updating book content: {e}")
+            return False
+        finally:
+            conn.close()
+    
     def get_book_content(self, book_id):
         """
         Get the text content of a book.

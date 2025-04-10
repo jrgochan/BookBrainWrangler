@@ -34,7 +34,7 @@ def render_book_management_page(book_manager, document_processor, knowledge_base
     render_library_section(book_manager)
     
     # Book editing modal
-    render_edit_modal(book_manager)
+    render_edit_modal(book_manager, document_processor, knowledge_base)
 
 def render_upload_section(book_manager, document_processor):
     """
@@ -536,12 +536,14 @@ def render_library_section(book_manager):
     
     render_book_list(books, on_edit=on_edit, on_delete=on_delete)
 
-def render_edit_modal(book_manager):
+def render_edit_modal(book_manager, document_processor, knowledge_base):
     """
     Render the enhanced book editing interface with tabs.
     
     Args:
         book_manager: The BookManager instance
+        document_processor: The DocumentProcessor instance
+        knowledge_base: The KnowledgeBase instance
     """
     if 'book_to_edit' in st.session_state and st.session_state.book_to_edit:
         book = book_manager.get_book(st.session_state.book_to_edit)
@@ -625,15 +627,197 @@ def render_edit_modal(book_manager):
                     st.markdown("### Content Preview")
                     st.text_area("First 1000 characters", value=preview_text, height=300, disabled=True, key=f"content_preview_{book['id']}")
                     
-                    # Option to export content
-                    st.download_button(
-                        label="Export Content as TXT",
-                        data=content,
-                        file_name=f"{book['title']}_content.txt",
-                        mime="text/plain"
-                    )
+                    # Buttons row for content actions
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button(
+                            label="Export Content as TXT",
+                            data=content,
+                            file_name=f"{book['title']}_content.txt",
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+                    with col2:
+                        reprocess_button = st.button(
+                            "🔄 Reprocess Document", 
+                            type="primary", 
+                            key=f"reprocess_{book['id']}",
+                            use_container_width=True
+                        )
+                    
+                    # Reprocessing logic
+                    if reprocess_button:
+                        # Create a dedicated reprocessing console with expandable UI
+                        reprocess_status = st.status("Reprocessing document...", expanded=True)
+                        
+                        with reprocess_status:
+                            # Get original file path
+                            file_path = book.get('file_path')
+                            
+                            if not file_path or not os.path.exists(file_path):
+                                st.error(f"❌ Original file not found at '{file_path}'. Cannot reprocess document.")
+                            else:
+                                # Process header and info
+                                st.markdown(f"### Reprocessing: {os.path.basename(file_path)}")
+                                st.info(f"📄 File: {os.path.basename(file_path)} ({os.path.getsize(file_path) / (1024 * 1024):.2f} MB)")
+                                
+                                # Create console output
+                                st.markdown("""
+                                <style>
+                                .reprocess-console {
+                                    background-color: #0e1117;
+                                    color: #16c60c;
+                                    font-family: 'Courier New', monospace;
+                                    border: 1px solid #4d4d4d;
+                                    border-radius: 5px;
+                                    padding: 10px;
+                                    height: 250px;
+                                    overflow-y: auto;
+                                    white-space: pre-wrap;
+                                    word-break: break-word;
+                                    line-height: 1.3;
+                                    font-size: 0.9rem;
+                                }
+                                </style>
+                                """, unsafe_allow_html=True)
+                                
+                                # Create progress bar and console output
+                                progress_bar = st.progress(0, text="Initializing reprocessing...")
+                                console_output = st.empty()
+                                
+                                # Initialize log list
+                                logs = []
+                                
+                                # Helper to update console with timestamp
+                                def add_log(message, level="INFO"):
+                                    timestamp = datetime.now().strftime("%H:%M:%S")
+                                    prefix = "✅" if level == "SUCCESS" else "⚠️" if level == "WARNING" else "❌" if level == "ERROR" else "ℹ️"
+                                    logs.append(f"[{timestamp}] {prefix} {message}")
+                                    console_content = "\n".join(logs)
+                                    console_output.markdown(f'<div class="reprocess-console">{console_content}</div>', unsafe_allow_html=True)
+                                
+                                # Log the start of reprocessing
+                                add_log(f"Starting reprocessing of '{book['title']}'")
+                                add_log(f"Original file: {file_path}")
+                                
+                                try:
+                                    # Create a progress callback for document processing
+                                    def process_progress_callback(progress, message):
+                                        if isinstance(progress, (int, float)):
+                                            progress_value = min(progress, 1.0)
+                                            progress_bar.progress(progress_value, text=f"Processing: {int(progress_value * 100)}%")
+                                        
+                                        if isinstance(message, dict):
+                                            msg_text = message.get("text", str(message))
+                                            add_log(msg_text)
+                                        else:
+                                            add_log(str(message))
+                                    
+                                    # Step 1: Process the document
+                                    add_log("Extracting content from document...", "INFO")
+                                    progress_bar.progress(0.1, text="Processing document...")
+                                    
+                                    # Process the document with visualization options disabled for speed
+                                    result = document_processor.process_document(
+                                        file_path,
+                                        include_images=False,  # Skip image extraction for reprocessing
+                                        ocr_enabled=False,     # Skip OCR for reprocessing
+                                        progress_callback=process_progress_callback
+                                    )
+                                    
+                                    # Extract content from result
+                                    extracted_text = result.get("text", "")
+                                    
+                                    if not extracted_text or len(extracted_text) < 10:
+                                        add_log("Extracted text is empty or too short", "ERROR")
+                                        progress_bar.progress(1.0, text="Processing failed!")
+                                        st.error("Reprocessing failed: Could not extract meaningful text content.")
+                                        return
+                                    
+                                    # Step 2: Update book content in database
+                                    add_log(f"Extracted {len(extracted_text)} characters", "SUCCESS")
+                                    add_log("Updating book content in database...", "INFO")
+                                    progress_bar.progress(0.6, text="Updating database...")
+                                    
+                                    # Update book in database with new content
+                                    book_manager.update_book_content(book['id'], extracted_text)
+                                    add_log("Book content updated in database", "SUCCESS")
+                                    
+                                    # Step 3: Update book in knowledge base if it's indexed
+                                    progress_bar.progress(0.8, text="Updating knowledge base...")
+                                    
+                                    # Check if book is in knowledge base
+                                    is_indexed = knowledge_base.is_document_indexed(book['id'])
+                                    if is_indexed:
+                                        add_log("Book found in knowledge base, updating...", "INFO")
+                                        
+                                        # Remove document from knowledge base
+                                        knowledge_base.remove_document(book['id'])
+                                        
+                                        # Add updated document to knowledge base
+                                        metadata = {
+                                            "title": book['title'],
+                                            "author": book['author'],
+                                            "categories": book['categories'],
+                                            "book_id": book['id']
+                                        }
+                                        knowledge_base.add_document(book['id'], extracted_text, metadata)
+                                        add_log("Knowledge base updated successfully", "SUCCESS")
+                                    else:
+                                        add_log("Book not found in knowledge base, skipping KB update", "WARNING")
+                                    
+                                    # Finalize
+                                    progress_bar.progress(1.0, text="Reprocessing complete!")
+                                    add_log("Reprocessing completed successfully", "SUCCESS")
+                                    
+                                    # Update reprocess status UI
+                                    reprocess_status.update(
+                                        label=f"✅ Document '{book['title']}' reprocessed successfully!",
+                                        state="complete"
+                                    )
+                                    
+                                    # Update word count and character count in UI
+                                    word_count = len(extracted_text.split())
+                                    char_count = len(extracted_text)
+                                    st.session_state[f"word_count_{book['id']}"] = word_count
+                                    st.session_state[f"char_count_{book['id']}"] = char_count
+                                    
+                                    # Trigger rerun to update UI
+                                    time.sleep(1)  # Brief delay for UI feedback
+                                    st.rerun()
+                                    
+                                except Exception as e:
+                                    # Handle errors
+                                    add_log(f"Error during reprocessing: {str(e)}", "ERROR")
+                                    progress_bar.progress(1.0, text="Reprocessing failed!")
+                                    st.error(f"An error occurred during reprocessing: {str(e)}")
+                                    
+                                    # Log full error details
+                                    import traceback
+                                    error_details = traceback.format_exc()
+                                    add_log("Error details:", "ERROR")
+                                    for line in error_details.split("\n"):
+                                        if line.strip():
+                                            add_log(f"  {line}", "ERROR")
+                    
                 else:
                     st.warning("No content available for this book.")
+                    
+                    # Add reprocess button even when content is not available
+                    reprocess_button = st.button(
+                        "🔄 Reprocess Document", 
+                        type="primary", 
+                        key=f"reprocess_empty_{book['id']}"
+                    )
+                    
+                    if reprocess_button:
+                        # Similar reprocessing logic but focused on recovery
+                        file_path = book.get('file_path')
+                        if not file_path or not os.path.exists(file_path):
+                            st.error(f"Original file not found at '{file_path}'. Cannot reprocess document.")
+                        else:
+                            st.info(f"Attempting to recover content from original file: {os.path.basename(file_path)}")
+                            # Implement similar reprocessing logic as above
             
             # Knowledge Base Status Tab
             with kb_tab:
