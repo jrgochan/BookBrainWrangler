@@ -20,18 +20,26 @@ logger = get_logger(__name__)
 F = TypeVar('F', bound=Callable[..., Any])
 
 def retry_with_exponential_backoff(
-    func: F,
     initial_delay: float = 1,
     exponential_base: float = 2,
     jitter: bool = True,
     max_retries: int = 5,
     errors: tuple = (Exception,),
-) -> F:
+):
     """
     Retry a function with exponential backoff.
     
+    This is a decorator that can be used with or without arguments:
+    
+    @retry_with_exponential_backoff
+    def my_function():
+        # ...
+        
+    @retry_with_exponential_backoff(max_retries=3)
+    def my_other_function():
+        # ...
+    
     Args:
-        func: The function to retry
         initial_delay: Initial delay between retries in seconds
         exponential_base: Base of the exponential backoff
         jitter: Whether to add random jitter to the delay
@@ -41,32 +49,43 @@ def retry_with_exponential_backoff(
     Returns:
         Wrapped function that will be retried
     """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        num_retries = 0
-        delay = initial_delay
-        
-        while True:
-            try:
-                return func(*args, **kwargs)
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            num_retries = 0
+            delay = initial_delay
             
-            except errors as e:
-                num_retries += 1
+            while True:
+                try:
+                    return func(*args, **kwargs)
                 
-                if num_retries > max_retries:
-                    logger.error(f"Maximum retries ({max_retries}) exceeded.")
-                    raise
-                
-                delay *= exponential_base * (1 + jitter * random.random())
-                
-                logger.warning(
-                    f"Retrying '{func.__name__}' in {delay:.2f}s after error: {str(e)}. "
-                    f"Retry {num_retries}/{max_retries}."
-                )
-                
-                time.sleep(delay)
+                except errors as e:
+                    num_retries += 1
+                    
+                    if num_retries > max_retries:
+                        logger.error(f"Maximum retries ({max_retries}) exceeded.")
+                        raise
+                    
+                    delay *= exponential_base * (1 + jitter * random.random())
+                    
+                    logger.warning(
+                        f"Retrying '{func.__name__}' in {delay:.2f}s after error: {str(e)}. "
+                        f"Retry {num_retries}/{max_retries}."
+                    )
+                    
+                    time.sleep(delay)
+        
+        return wrapper
     
-    return wrapper
+    # This handles both @retry_with_exponential_backoff and @retry_with_exponential_backoff()
+    if callable(initial_delay):
+        # If the first argument is callable, it's being used as @retry_with_exponential_backoff without parentheses
+        func = initial_delay
+        initial_delay = 1  # Reset to default
+        return decorator(func)
+    
+    # Otherwise, it's being used as @retry_with_exponential_backoff(...) with arguments
+    return decorator
 
 def format_context_prompt(prompt: str, context: str) -> str:
     """
