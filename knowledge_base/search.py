@@ -10,7 +10,7 @@ from utils.logger import get_logger
 from knowledge_base.config import (
     DEFAULT_SEARCH_LIMIT, DEFAULT_SEARCH_THRESHOLD
 )
-from knowledge_base.vector_store import KnowledgeBase
+from knowledge_base import KnowledgeBase
 
 # Get a logger for this module
 logger = get_logger(__name__)

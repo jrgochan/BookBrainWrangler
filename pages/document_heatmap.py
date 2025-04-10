@@ -24,7 +24,7 @@ from nltk.probability import FreqDist
 from knowledge_base import KnowledgeBase
 from book_manager.manager import BookManager
 from utils.logger import get_logger
-from utils.text_processing import cleanup_text
+from utils.text_processing import clean_text
 
 # Define functions that may not be imported properly
 def extract_page_as_image(pdf_path, page_number):
