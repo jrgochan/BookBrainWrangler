@@ -78,7 +78,11 @@ def create_fallback_embedding(text: str, model: str, dimensions: int = 384) -> E
     """
     logger.warning(f"Using fallback embedding for text: '{text[:50]}...'")
     zeros = np.zeros(dimensions).astype(float).tolist()
-    return EmbeddingVector(values=zeros, text=text, model=f"{model}(fallback)")
+    return EmbeddingVector(
+        model=f"{model}(fallback)",
+        dimensions=dimensions,
+        embedding=zeros
+    )
 
 def format_context_prompt(prompt: str, context: str) -> str:
     """
