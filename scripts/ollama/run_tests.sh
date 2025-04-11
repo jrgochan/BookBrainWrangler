@@ -12,8 +12,9 @@ export PYTHONPATH=$PROJECT_ROOT:$PYTHONPATH
 POSITIONAL=()
 HOST=""
 PORT=""
-MODEL="llama2"
+MODEL="llama2:7b"
 TEST="all"
+VISION_MODEL=""
 WAIT=false
 VERBOSE=false
 
@@ -40,6 +41,11 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
+    --vision-model)
+      VISION_MODEL="$2"
+      shift
+      shift
+      ;;
     --wait)
       WAIT=true
       shift
@@ -52,13 +58,14 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: run_tests.sh [options]"
       echo ""
       echo "Options:"
-      echo "  --host HOST      Ollama server host (default: localhost or OLLAMA_HOST env var)"
-      echo "  --port PORT      Ollama server port (default: 11434 or OLLAMA_PORT env var)"
-      echo "  --model MODEL    Model to test (default: llama2)"
-      echo "  --test TEST      Which tests to run (all, connectivity, models, generation, embeddings)"
-      echo "  --wait           Wait for Ollama server to become available"
-      echo "  --verbose, -v    Enable verbose output"
-      echo "  --help, -h       Show this help message"
+      echo "  --host HOST             Ollama server host (default: localhost or OLLAMA_HOST env var)"
+      echo "  --port PORT             Ollama server port (default: 11434 or OLLAMA_PORT env var)"
+      echo "  --model MODEL           Model to test (default: llama2:7b)"
+      echo "  --test TEST             Which tests to run (all, connectivity, models, generation, embeddings, capabilities)"
+      echo "  --vision-model MODEL    Specific model to test vision capabilities (e.g., llava:7b, mistral-small3.1:24b)"
+      echo "  --wait                  Wait for Ollama server to become available"
+      echo "  --verbose, -v           Enable verbose output"
+      echo "  --help, -h              Show this help message"
       exit 0
       ;;
     *)
@@ -85,6 +92,10 @@ fi
 
 if [ ! -z "$TEST" ]; then
   CMD="$CMD --test $TEST"
+fi
+
+if [ ! -z "$VISION_MODEL" ]; then
+  CMD="$CMD --vision-model $VISION_MODEL"
 fi
 
 if [ "$WAIT" = true ]; then

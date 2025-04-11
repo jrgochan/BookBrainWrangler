@@ -77,8 +77,9 @@ Both the shell scripts and the Python script accept the following options:
 |--------|-------------|
 | `--host` | Ollama server host (default: from env OLLAMA_HOST or localhost) |
 | `--port` | Ollama server port (default: from env OLLAMA_PORT or 11434) |
-| `--model` | Model to test (default: llama2) |
-| `--test` | Which tests to run: all, connectivity, models, generation, embeddings (default: all) |
+| `--model` | Model to test (default: llama2:7b) |
+| `--test` | Which tests to run: all, connectivity, models, generation, embeddings, capabilities (default: all) |
+| `--vision-model` | Specific model to test vision capabilities with (e.g., llava:7b, mistral-small3.1:24b) |
 | `--wait-for-server` | Wait for Ollama server to be available before starting tests |
 | `--wait-timeout` | Maximum time to wait for server in seconds (default: 60) |
 | `--verbose` | Enable verbose output |
@@ -105,6 +106,11 @@ The test suite includes the following categories:
 - Validates embedding vectors (dimensions, values, etc.)
 - Calculates similarity between embeddings
 
+### Capabilities Tests (Ollama v0.6.4+)
+- Tests the model capabilities detection feature introduced in Ollama v0.6.4
+- Verifies vision capability detection for compatible models
+- Includes preliminary support for testing Mistral Small 3.1 vision model (added in v0.6.5)
+
 ## Examples
 
 ### Test only connectivity
@@ -117,6 +123,12 @@ The test suite includes the following categories:
 
 ```bash
 ./run_tests.sh --model mistral
+```
+
+### Test capabilities with a vision model
+
+```bash
+./run_tests.sh --test capabilities --vision-model llava:7b
 ```
 
 ### Test with a custom server
@@ -147,6 +159,22 @@ If text generation or embedding tests fail:
 1. Ensure the model supports the operation (not all models support embeddings)
 2. Try with a different model
 3. Check if the model is fully downloaded and not corrupted
+
+## Ollama Version Compatibility
+
+The test suite is designed to work with different Ollama versions, with special consideration for features introduced in newer versions:
+
+### Ollama v0.6.4 Features
+- Model capabilities detection through the `/api/show` endpoint
+- Support for detecting vision capability in models like Llava
+
+### Ollama v0.6.5 Features
+- Added support for Mistral Small 3.1 as a high-performing vision model
+- Improved handling of Gemma 3 models (fixed OOM errors, multilingual character handling)
+- Fixed context shifting issues in DeepSeek models
+- Added support for AMD RDNA4 GPUs on Linux
+
+If you're using an older version of Ollama, the capabilities tests may fail, but the core functionality tests should still work.
 
 ## Integration with BookBrainWrangler
 

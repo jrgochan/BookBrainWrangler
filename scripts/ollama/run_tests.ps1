@@ -4,8 +4,9 @@
 param(
     [string]$hostName = "",
     [string]$port = "",
-    [string]$model = "llama2",
+    [string]$model = "llama2:7b",
     [string]$test = "all",
+    [string]$visionModel = "",
     [switch]$wait = $false,
     [switch]$verbose = $false,
     [switch]$help = $false
@@ -23,13 +24,14 @@ if ($help) {
     Write-Host "Usage: .\run_tests.ps1 [options]"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  -host HOST       Ollama server host (default: localhost or OLLAMA_HOST env var)"
-    Write-Host "  -port PORT       Ollama server port (default: 11434 or OLLAMA_PORT env var)"
-    Write-Host "  -model MODEL     Model to test (default: llama2)"
-    Write-Host "  -test TEST       Which tests to run (all, connectivity, models, generation, embeddings)"
-    Write-Host "  -wait            Wait for Ollama server to become available"
-    Write-Host "  -verbose         Enable verbose output"
-    Write-Host "  -help            Show this help message"
+    Write-Host "  -hostName HOST        Ollama server host (default: localhost or OLLAMA_HOST env var)"
+    Write-Host "  -port PORT            Ollama server port (default: 11434 or OLLAMA_PORT env var)"
+    Write-Host "  -model MODEL          Model to test (default: llama2:7b)"
+    Write-Host "  -test TEST            Which tests to run (all, connectivity, models, generation, embeddings, capabilities)"
+    Write-Host "  -visionModel MODEL    Specific model to test vision capabilities (e.g., llava:7b, mistral-small3.1:24b)"
+    Write-Host "  -wait                 Wait for Ollama server to become available"
+    Write-Host "  -verbose              Enable verbose output"
+    Write-Host "  -help                 Show this help message"
     exit 0
 }
 
@@ -50,6 +52,10 @@ if ($model -ne "") {
 
 if ($test -ne "") {
     $cmd = "$cmd --test $test"
+}
+
+if ($visionModel -ne "") {
+    $cmd = "$cmd --vision-model $visionModel"
 }
 
 if ($wait) {

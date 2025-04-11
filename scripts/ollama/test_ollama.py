@@ -21,6 +21,7 @@ from scripts.ollama.test_connectivity import test_connectivity
 from scripts.ollama.test_models import test_list_models, test_model_info
 from scripts.ollama.test_generation import test_text_generation, test_chat_generation
 from scripts.ollama.test_embeddings import test_embeddings
+from scripts.ollama.test_capabilities import test_model_capabilities, test_vision_capability
 from scripts.ollama.test_config import TestConfig
 
 # Get logger
@@ -61,9 +62,16 @@ def setup_args() -> argparse.Namespace:
     parser.add_argument(
         '--test',
         type=str,
-        choices=['all', 'connectivity', 'models', 'generation', 'embeddings'],
+        choices=['all', 'connectivity', 'models', 'generation', 'embeddings', 'capabilities'],
         default='all',
         help='Which tests to run (default: all)'
+    )
+    
+    parser.add_argument(
+        '--vision-model',
+        type=str,
+        default=None,
+        help='Specific model to test vision capabilities with (e.g., llava:7b, mistral-small3.1:24b)'
     )
     
     parser.add_argument(
@@ -135,6 +143,17 @@ def run_tests(config: TestConfig) -> Dict[str, bool]:
         logger.error("Aborting tests because Ollama server not available")
         return {"server_available": False}
     
+    # Store the list of available models in the config
+    try:
+        config.available_models = client.list_models()
+        if config.available_models:
+            logger.info(f"Found {len(config.available_models)} available models")
+        else:
+            logger.warning("No models found on the Ollama server")
+    except Exception as e:
+        logger.warning(f"Could not retrieve list of models: {str(e)}")
+        config.available_models = []
+
     # Run connectivity tests
     if config.test in ['all', 'connectivity']:
         logger.info("--- Running connectivity tests ---")
@@ -156,6 +175,15 @@ def run_tests(config: TestConfig) -> Dict[str, bool]:
     if config.test in ['all', 'embeddings']:
         logger.info("--- Running embedding tests ---")
         results["embeddings"] = test_embeddings(client, config)
+        
+    # Run capabilities tests (v0.6.4+ features)
+    if config.test in ['all', 'capabilities']:
+        logger.info("--- Running capabilities tests (Ollama v0.6.4+) ---")
+        results["model_capabilities"] = test_model_capabilities(client, config)
+        
+        # Only run vision capability test if model_capabilities passes
+        if results.get("model_capabilities", False):
+            results["vision_capability"] = test_vision_capability(client, config)
     
     return results
 
@@ -201,7 +229,8 @@ def main() -> None:
         test=args.test,
         wait_for_server=args.wait_for_server,
         wait_timeout=args.wait_timeout,
-        verbose=args.verbose
+        verbose=args.verbose,
+        vision_model=args.vision_model
     )
     
     try:
