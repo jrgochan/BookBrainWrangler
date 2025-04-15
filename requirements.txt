@@ -42,3 +42,6 @@ annoy
 chromadb
 easyocr
 huggingface_hub
+loguru
+taipy
+taipy-gui
