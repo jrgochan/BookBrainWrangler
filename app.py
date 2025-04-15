@@ -411,8 +411,8 @@ def render_settings_page():
 # Render Internet Archive search page
 def render_archive_search_page():
     """Render the Internet Archive search page."""
-    # Import the archive search page module
-    from pages.archive_search import render_archive_search_page
+    # Import the enhanced archive search page module
+    from pages.archive_search_enhanced import render_archive_search_page
     
     # Call the implemented archive search page
     render_archive_search_page()
