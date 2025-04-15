@@ -71,7 +71,7 @@ def init_session_state():
         # Initialize notification system
         from utils.notifications import NotificationManager
         st.session_state.notification_manager = NotificationManager()
-        st.session_state.notifications = st.session_state.notification_manager.notifications
+        st.session_state.notifications = st.session_state.notification_manager.get_all_notifications()
         
         logger.info("Session state initialized")
 

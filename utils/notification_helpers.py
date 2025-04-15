@@ -2,7 +2,7 @@
 Helper functions for working with notifications.
 """
 
-from typing import List, Dict, Any
+from typing import Dict, List, Any
 
 def count_unread_notifications(notifications: List[Dict[str, Any]]) -> int:
     """
@@ -14,4 +14,7 @@ def count_unread_notifications(notifications: List[Dict[str, Any]]) -> int:
     Returns:
         Number of unread notifications
     """
-    return sum(1 for n in notifications if not n.get("read", False))
+    if not notifications:
+        return 0
+        
+    return len([n for n in notifications if not n.get("read", False) and not n.get("dismissed", False)])
