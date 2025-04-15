@@ -67,6 +67,10 @@ def init_session_state():
         # Initialize other session variables as needed
         if "thumbnail_cache" not in st.session_state:
             st.session_state.thumbnail_cache = {}
+        
+        # Initialize theme
+        from components.theme_selector import get_current_theme
+        st.session_state.theme = get_current_theme()
             
         # Initialize notification system
         from utils.notifications import NotificationManager
@@ -102,6 +106,13 @@ def render_sidebar():
             
         if st.button("🔍 Archive Search", use_container_width=True):
             st.session_state.current_page = "archive_search"
+            st.rerun()
+        
+        st.sidebar.divider()
+        st.sidebar.subheader("Preferences")
+            
+        if st.button("🎨 Appearance", use_container_width=True):
+            st.session_state.current_page = "appearance"
             st.rerun()
             
         if st.button("⚙️ Settings", use_container_width=True):
@@ -150,7 +161,7 @@ def render_home_page():
     
     total_books = count_books()
     total_categories = count_categories()
-    kb_documents = len(st.session_state.knowledge_base.get_documents())
+    kb_documents = len(st.session_state.knowledge_base.list_documents())
     
     # Create metrics
     col1, col2, col3 = st.columns(3)
@@ -241,6 +252,11 @@ def render_chat_page():
     from pages.chat_with_ai import render as render_chat
     render_chat()
 
+def render_appearance_settings_page():
+    """Render the appearance settings page."""
+    from pages.appearance_settings import render as render_appearance
+    render_appearance()
+
 def render_settings_page():
     """Render the settings page."""
     from pages.settings import settings_page as render_settings
@@ -275,6 +291,8 @@ def main():
         render_knowledge_base_page()
     elif current_page == "chat":
         render_chat_page()
+    elif current_page == "appearance":
+        render_appearance_settings_page()
     elif current_page == "settings":
         render_settings_page()
     elif current_page == "archive_search":
