@@ -66,64 +66,56 @@ class PDFProcessor:
         
         Args:
             file_path: Path to the PDF file
-            extract_images: Whether to extract images
-            ocr_enabled: Whether to use OCR for image-based PDFs
-            progress_callback: Optional callback function for progress updates
-            
-        Returns:
-            A dictionary with extracted content:
-            {
-                'text': Extracted text as a string,
-                'images': List of image descriptions with embedded base64 data (if extract_images=True),
-                'page_count': Number of pages in the PDF
-            }
         """
         if not os.path.exists(file_path):
             error_msg = f"PDF file not found: {file_path}"
             logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-        
+            return {
+                'text': '', 'images': [], 'page_count': 0,
+                'error': error_msg, 'warnings': []
+            }
         if not file_path.lower().endswith('.pdf'):
             error_msg = f"Not a PDF file: {file_path}"
             logger.error(error_msg)
-            raise DocumentFormatError(error_msg)
-        
-        # Initialize result dictionary
+            return {
+                'text': '', 'images': [], 'page_count': 0,
+                'error': error_msg, 'warnings': []
+            }
         result = {
-            'text': '',
-            'images': [],
-            'page_count': 0
+            'text': '', 'images': [], 'page_count': 0,
+            'error': None, 'warnings': []
         }
-        
         try:
-            # Define a progress callback handler
             def send_progress(current, total, message="Processing PDF"):
                 if progress_callback:
                     progress_callback(current / total, message)
-                    
-            # Extract text from PDF
             text_result = self.extract_text(file_path, progress_callback=send_progress)
             result['text'] = text_result.get('text', '')
             result['page_count'] = text_result.get('page_count', 0)
-            
-            # Extract images if requested
+            if text_result.get('warnings'):
+                result['warnings'].extend(text_result['warnings'])
+            if text_result.get('error'):
+                result['error'] = text_result['error']
             if extract_images:
-                # Try PDF2Image for rendering pages as images
                 if PDF2IMAGE_AVAILABLE:
                     logger.info(f"Extracting images from PDF: {file_path}")
                     images_result = self.extract_images(file_path, progress_callback=send_progress)
                     result['images'] = images_result.get('images', [])
+                    if images_result.get('warnings'):
+                        result['warnings'].extend(images_result['warnings'])
+                    if images_result.get('error'):
+                        result['error'] = images_result['error']
                 else:
-                    logger.warning("Skipping image extraction: pdf2image not available")
-            
-            # Log success
+                    warn = "Skipping image extraction: pdf2image not available"
+                    logger.warning(warn)
+                    result['warnings'].append(warn)
             logger.info(f"Successfully processed PDF file: {file_path}")
             return result
-            
         except Exception as e:
             error_msg = f"Error processing PDF file {file_path}: {str(e)}"
-            logger.error(error_msg)
-            raise DocumentProcessingError(error_msg) from e
+            logger.error(error_msg, exc_info=True)
+            result['error'] = error_msg
+            return result
     
     def extract_text(
         self, 
@@ -132,129 +124,97 @@ class PDFProcessor:
     ) -> Dict[str, Any]:
         """
         Extract text from a PDF file with enhanced error handling and fallback mechanisms.
-        
-        Args:
-            file_path: Path to the PDF file
-            progress_callback: Optional callback function for progress updates
-            
-        Returns:
-            Dictionary with extracted text and page count
+        Always returns a dict with text, page_count, error, and warnings.
         """
         if not PYPDF2_AVAILABLE:
             logger.error("PyPDF2 is not available. Cannot extract text from PDF.")
-            return {'text': '', 'page_count': 0}
-        
+            return {'text': '', 'page_count': 0, 'error': 'PyPDF2 unavailable', 'warnings': []}
+        warnings = []
         try:
-            # Open the PDF file
             with open(file_path, 'rb') as file:
-                # Create a PDF reader object
                 pdf_reader = PyPDF2.PdfReader(file)
                 page_count = len(pdf_reader.pages)
                 logger.info(f"PDF has {page_count} pages: {file_path}")
-                
-                # Track pages with issues
                 pages_with_errors = []
                 empty_pages = []
-                
-                # Extract text from each page
                 text = ""
                 for i, page in enumerate(pdf_reader.pages):
-                    # Update progress
                     if progress_callback:
                         progress_callback(i / page_count, f"Extracting text from page {i+1}/{page_count}")
-                    
                     try:
-                        # Extract text from page with multiple attempts
                         page_text = ""
                         try:
-                            # First attempt - standard extraction
                             page_text = page.extract_text() or ""
                         except Exception as e1:
-                            # Log the error
                             logger.warning(f"Standard extraction failed on page {i+1}: {str(e1)}")
-                            # Try alternative approach - extract by elements
+                            warnings.append(f"Standard extraction failed on page {i+1}: {str(e1)}")
                             try:
-                                # Access the raw page elements (if available)
                                 page_elements = getattr(page, "_objects", None)
                                 if page_elements:
-                                    # Extract any text content from elements
                                     page_text = " ".join([str(elem) for elem in page_elements if hasattr(elem, "get_text")])
                             except Exception as e2:
                                 logger.warning(f"Alternative extraction failed on page {i+1}: {str(e2)}")
-                        
-                        # Log page text length
+                                warnings.append(f"Alternative extraction failed on page {i+1}: {str(e2)}")
                         if len(page_text) == 0:
                             logger.warning(f"No text extracted from page {i+1}")
+                            warnings.append(f"No text extracted from page {i+1}")
                             empty_pages.append(i+1)
                         else:
                             logger.info(f"Extracted {len(page_text)} characters from page {i+1}")
-                            
-                        # Clean up page text (remove excessive whitespace)
                         page_text = " ".join(page_text.split())
                         text += page_text + "\n\n"
                     except Exception as page_error:
                         logger.error(f"Error extracting text from page {i+1}: {str(page_error)}")
+                        warnings.append(f"Error extracting text from page {i+1}: {str(page_error)}")
                         pages_with_errors.append(i+1)
-                        # Continue with next page despite error
-                
-                # Check if we actually extracted any text
                 text = text.strip()
-                
-                # Check all extraction status
                 if pages_with_errors:
                     logger.warning(f"Had errors extracting text from pages: {pages_with_errors}")
-                
+                    warnings.append(f"Had errors extracting text from pages: {pages_with_errors}")
                 if empty_pages:
                     logger.warning(f"Extracted no text from pages: {empty_pages}")
-                    
-                # If text extraction was unsuccessful or too little text was extracted, try OCR
+                    warnings.append(f"Extracted no text from pages: {empty_pages}")
+                # OCR fallback
                 if len(text) < 100 or (empty_pages and len(empty_pages) > page_count / 2):
                     logger.warning(f"Extracted text may be insufficient ({len(text)} chars), attempting OCR fallback")
+                    warnings.append(f"Extracted text may be insufficient ({len(text)} chars), attempting OCR fallback")
                     try:
-                        # Import OCR module for fallback
                         from document_processing.ocr import OCRProcessor
-                        
-                        # Create OCR processor
                         ocr = OCRProcessor()
-                        
                         if progress_callback:
                             progress_callback(0.7, f"Standard extraction yielded insufficient text. Trying OCR...")
-                        
-                        # Extract text using OCR
                         ocr_result = ocr.process_file(file_path, progress_callback=progress_callback)
-                        
                         if ocr_result and 'text' in ocr_result and ocr_result['text']:
-                            # Compare lengths to see which extraction method worked better
                             ocr_text = ocr_result['text']
                             if len(ocr_text) > len(text):
                                 logger.info(f"OCR extracted more text ({len(ocr_text)} chars) than PyPDF2 ({len(text)} chars). Using OCR result.")
+                                warnings.append(f"OCR extracted more text than PyPDF2 on {file_path}")
                                 text = ocr_text
                             else:
                                 logger.info(f"PyPDF2 extracted more text ({len(text)} chars) than OCR ({len(ocr_text)} chars). Using PyPDF2 result.")
                         else:
                             logger.warning("OCR fallback also failed to extract text")
+                            warnings.append("OCR fallback also failed to extract text")
                     except Exception as ocr_error:
                         logger.error(f"Error during OCR fallback: {str(ocr_error)}")
-                
-                # Clean up final text
-                # Replace multiple newlines with a single one
+                        warnings.append(f"Error during OCR fallback: {str(ocr_error)}")
                 import re
                 text = re.sub(r'\n{3,}', '\n\n', text)
-                
-                # Log final result
                 if len(text) > 0:
                     logger.info(f"Successfully extracted {len(text)} characters from {page_count} pages in {file_path}")
                 else:
                     logger.error(f"Failed to extract any text from {file_path}")
-                    
+                    warnings.append(f"Failed to extract any text from {file_path}")
                 return {
                     'text': text,
-                    'page_count': page_count
+                    'page_count': page_count,
+                    'error': None,
+                    'warnings': warnings
                 }
-                
         except Exception as e:
             logger.error(f"Error extracting text from PDF {file_path}: {str(e)}")
-            # Try OCR as last resort for completely failed extraction
+            warnings.append(f"Error extracting text from PDF {file_path}: {str(e)}")
+            # Try OCR as last resort
             try:
                 from document_processing.ocr import OCRProcessor
                 ocr = OCRProcessor()
@@ -265,12 +225,14 @@ class PDFProcessor:
                 if ocr_result and 'text' in ocr_result:
                     return {
                         'text': ocr_result['text'],
-                        'page_count': ocr_result.get('page_count', 0)
+                        'page_count': ocr_result.get('page_count', 0),
+                        'error': None,
+                        'warnings': warnings + ["Used OCR fallback due to PyPDF2 failure"]
                     }
             except Exception as ocr_error:
                 logger.error(f"Final OCR attempt also failed: {str(ocr_error)}")
-            
-            return {'text': '', 'page_count': 0}
+                warnings.append(f"Final OCR attempt also failed: {str(ocr_error)}")
+            return {'text': '', 'page_count': 0, 'error': 'Text extraction failed', 'warnings': warnings}
     
     def extract_images(
         self,

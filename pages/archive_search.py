@@ -1063,6 +1063,31 @@ def download_and_process_book(
                 progress_callback=process_progress_callback
             )
             
+            # Check for errors and warnings in the result
+            error_msg = result.get('error', '')
+            warnings = result.get('warnings', [])
+            if error_msg or warnings:
+                # Show error/warning in UI and logs
+                if error_msg:
+                    step_statuses["Document Processing"] = "❌"
+                    step_details["Document Processing"].error(f"Processing error: {error_msg}")
+                    status_text.error(f"Document processing failed: {error_msg}")
+                    add_log(f"Document processing error: {error_msg}", "ERROR")
+                if warnings:
+                    for w in warnings:
+                        step_details["Document Processing"].warning(f"Warning: {w}")
+                        add_log(f"Document processing warning: {w}", "WARNING")
+                update_steps_display(steps_container, steps, step_statuses, step_details)
+                processing_progress.progress(1.0, "Processing failed!")
+                overall_progress.progress(1.0, "Document processing failed")
+                # Show in log container
+                with log_container:
+                    if error_msg:
+                        st.error(f"Error: {error_msg}")
+                    for w in warnings:
+                        st.warning(f"Warning: {w}")
+                return
+            
             # Update processing progress to complete
             processing_progress.progress(1.0, "Processing complete!")
             overall_progress.progress(0.7, "Document processing complete")

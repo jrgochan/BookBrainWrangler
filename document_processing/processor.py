@@ -72,7 +72,15 @@ class DocumentProcessor:
         if not os.path.exists(file_path):
             error_msg = f"File not found: {file_path}"
             logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
+            return {
+                'text': '',
+                'images': [],
+                'error': error_msg,
+                'warnings': [error_msg],
+                'format': None,
+                'filename': os.path.basename(file_path),
+                'file_path': file_path
+            }
         
         # Get file extension
         _, ext = os.path.splitext(file_path)
@@ -82,7 +90,15 @@ class DocumentProcessor:
         if ext not in self.supported_formats:
             error_msg = f"Unsupported document format: {ext}"
             logger.error(error_msg)
-            raise DocumentFormatError(error_msg)
+            return {
+                'text': '',
+                'images': [],
+                'error': error_msg,
+                'warnings': [error_msg],
+                'format': ext,
+                'filename': os.path.basename(file_path),
+                'file_path': file_path
+            }
         
         try:
             # Get appropriate processor
@@ -105,24 +121,37 @@ class DocumentProcessor:
                     progress_callback=progress_callback
                 )
             
+            # Ensure 'error' and 'warnings' fields are present
+            if 'error' not in result:
+                result['error'] = ''
+            if 'warnings' not in result:
+                result['warnings'] = []
             # Add metadata
             result['format'] = ext
             result['filename'] = os.path.basename(file_path)
             result['file_path'] = file_path
             
-            # Log success
-            logger.info(f"Successfully processed document: {file_path}")
+            # Log success or error
+            if result['error']:
+                logger.error(f"Error in processor result for {file_path}: {result['error']}")
+            else:
+                logger.info(f"Successfully processed document: {file_path}")
             return result
-            
-        except DocumentProcessingError as e:
-            # Re-raise document processing errors
-            raise
-            
         except Exception as e:
-            # Handle other errors
+            # Handle all errors gracefully
             error_msg = f"Error processing document {file_path}: {str(e)}"
             logger.error(error_msg)
-            raise DocumentProcessingError(error_msg) from e
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                'text': '',
+                'images': [],
+                'error': error_msg,
+                'warnings': [error_msg],
+                'format': ext,
+                'filename': os.path.basename(file_path),
+                'file_path': file_path
+            }
     
     def process_file_object(
         self,
