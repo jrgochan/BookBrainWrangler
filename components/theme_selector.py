@@ -3,93 +3,88 @@ Theme selector component for Book Knowledge AI application.
 Provides a user interface for selecting different mood-based themes.
 """
 
-import streamlit as st
-from typing import Dict, List, Tuple, Optional, Any
-import os
 import json
+import os
+import streamlit as st
+from typing import Dict, Any, List, Tuple, Optional
 
-# Define mood-based color palettes
+# Define available themes
 THEMES = {
     "calm": {
-        "name": "Calm",
-        "description": "Serene blues and soft colors for a peaceful reading experience",
-        "primary": "#1E88E5",
-        "secondary": "#26A69A",
-        "background": "#F5F7FA",
+        "name": "Calm Blue",
+        "primary": "#4169E1",
+        "background": "#F0F8FF",
+        "secondary": "#87CEEB",
         "text": "#2C3E50",
-        "card_bg": "#FFFFFF",
-        "sidebar_bg": "#E3F2FD",
-        "success": "#4CAF50",
-        "error": "#E57373",
-        "warning": "#FFB74D",
-        "info": "#64B5F6",
-        "font": "'Roboto', sans-serif"
+        "accent": "#1E90FF",
+        "font": "sans-serif"
+    },
+    "forest": {
+        "name": "Forest Green",
+        "primary": "#2E8B57",
+        "background": "#F5F8F5",
+        "secondary": "#8FBC8F",
+        "text": "#2C3E30",
+        "accent": "#3CB371",
+        "font": "sans-serif"
+    },
+    "sunset": {
+        "name": "Sunset Orange",
+        "primary": "#FF7F50",
+        "background": "#FFF5F0",
+        "secondary": "#FFDAB9",
+        "text": "#4E3A2D",
+        "accent": "#FF6347",
+        "font": "sans-serif"
+    },
+    "lavender": {
+        "name": "Lavender Dreams",
+        "primary": "#9370DB",
+        "background": "#F8F5FF",
+        "secondary": "#D8BFD8",
+        "text": "#483D8B",
+        "accent": "#8A2BE2",
+        "font": "sans-serif"
+    },
+    "dark": {
+        "name": "Dark Mode",
+        "primary": "#607D8B",
+        "background": "#2C3E50",
+        "secondary": "#455A64",
+        "text": "#ECEFF1",
+        "accent": "#90A4AE",
+        "font": "sans-serif"
     },
     "focus": {
-        "name": "Focus",
-        "description": "High contrast dark theme for distraction-free reading",
-        "primary": "#5E35B1",
-        "secondary": "#00ACC1",
-        "background": "#263238",
-        "text": "#ECEFF1",
-        "card_bg": "#37474F",
-        "sidebar_bg": "#1E272C",
-        "success": "#00E676",
-        "error": "#FF5252",
-        "warning": "#FFD740",
-        "info": "#40C4FF",
-        "font": "'Roboto Mono', monospace"
+        "name": "Deep Focus",
+        "primary": "#2C3E50",
+        "background": "#FFFFFF",
+        "secondary": "#ECF0F1",
+        "text": "#2C3E50",
+        "accent": "#3498DB",
+        "font": "serif"
     },
-    "energetic": {
-        "name": "Energetic",
-        "description": "Vibrant colors to inspire creativity and engagement",
-        "primary": "#FF5722",
-        "secondary": "#FFC107",
-        "background": "#FAFAFA",
-        "text": "#212121",
-        "card_bg": "#FFFFFF",
-        "sidebar_bg": "#FFF3E0",
-        "success": "#7CB342",
-        "error": "#E53935",
-        "warning": "#FFA000",
-        "info": "#29B6F6",
-        "font": "'Nunito', sans-serif"
-    },
-    "soothing": {
-        "name": "Soothing",
-        "description": "Gentle pastels and rounded corners for a soft visual experience",
+    "creative": {
+        "name": "Creative Mode",
         "primary": "#9C27B0",
-        "secondary": "#4CAF50",
-        "background": "#F3E5F5",
+        "background": "#FCF5FF",
+        "secondary": "#E1BEE7",
         "text": "#4A148C",
-        "card_bg": "#FFFFFF",
-        "sidebar_bg": "#E1BEE7",
-        "success": "#66BB6A",
-        "error": "#EF9A9A",
-        "warning": "#FFCC80",
-        "info": "#81D4FA",
-        "font": "'Quicksand', sans-serif"
-    },
-    "classic": {
-        "name": "Classic",
-        "description": "Traditional library colors with a scholarly feel",
-        "primary": "#795548",
-        "secondary": "#607D8B",
-        "background": "#EFEBE9",
-        "text": "#3E2723",
-        "card_bg": "#D7CCC8",
-        "sidebar_bg": "#BCAAA4",
-        "success": "#8BC34A",
-        "error": "#FF8A65",
-        "warning": "#FFB74D",
-        "info": "#90CAF9",
-        "font": "'Libre Baskerville', serif"
+        "accent": "#7B1FA2",
+        "font": "cursive"
     }
 }
 
-# Key for session state
-THEME_KEY = "current_theme"
-THEME_CONFIG_FILE = ".streamlit/config.toml"
+# Theme descriptions
+THEME_DESCRIPTIONS = {
+    "calm": "A calming blue theme that helps you focus while reading and researching.",
+    "forest": "A natural green palette that creates a peaceful, organic environment.",
+    "sunset": "Warm orange tones that inspire creativity and positive energy.",
+    "lavender": "Gentle purple hues that stimulate imagination and intuition.",
+    "dark": "Low-light theme that reduces eye strain during night sessions.",
+    "focus": "High-contrast minimalist design for deep concentration.",
+    "creative": "Vibrant colors to inspire creative thinking and exploration."
+}
 
 def get_theme(theme_id: str) -> Dict[str, Any]:
     """
@@ -101,7 +96,9 @@ def get_theme(theme_id: str) -> Dict[str, Any]:
     Returns:
         Theme dictionary with color and font values
     """
-    return THEMES.get(theme_id, THEMES["calm"])
+    if theme_id in THEMES:
+        return THEMES[theme_id]
+    return THEMES["calm"]  # Default theme
 
 def get_available_themes() -> List[Tuple[str, str]]:
     """
@@ -110,7 +107,7 @@ def get_available_themes() -> List[Tuple[str, str]]:
     Returns:
         List of tuples containing theme ID and name
     """
-    return [(theme_id, theme["name"]) for theme_id, theme in THEMES.items()]
+    return [(theme_id, theme_data["name"]) for theme_id, theme_data in THEMES.items()]
 
 def get_theme_description(theme_id: str) -> str:
     """
@@ -122,8 +119,7 @@ def get_theme_description(theme_id: str) -> str:
     Returns:
         Theme description
     """
-    theme = get_theme(theme_id)
-    return theme.get("description", "")
+    return THEME_DESCRIPTIONS.get(theme_id, "")
 
 def apply_theme(theme_id: str) -> None:
     """
@@ -132,17 +128,12 @@ def apply_theme(theme_id: str) -> None:
     Args:
         theme_id: ID of the theme to apply
     """
-    # Set current theme in session state
-    st.session_state[THEME_KEY] = theme_id
-    
-    # Get theme data
-    theme = get_theme(theme_id)
-    
-    # Apply the theme by writing to config.toml
-    update_theme_config(theme)
-    
-    # Store the user's preference
-    save_theme_preference(theme_id)
+    if theme_id in THEMES:
+        st.session_state.theme = theme_id
+        # Also update config.toml if needed
+        update_theme_config(THEMES[theme_id])
+        # Save preference
+        save_theme_preference(theme_id)
 
 def update_theme_config(theme: Dict[str, Any]) -> None:
     """
@@ -151,24 +142,9 @@ def update_theme_config(theme: Dict[str, Any]) -> None:
     Args:
         theme: Theme dictionary with color and font values
     """
-    # Ensure .streamlit directory exists
-    os.makedirs(".streamlit", exist_ok=True)
-    
-    # Create or update the config.toml file
-    with open(THEME_CONFIG_FILE, "w") as f:
-        # Write theme section
-        f.write("[theme]\n")
-        f.write(f'primaryColor = "{theme["primary"]}"\n')
-        f.write(f'backgroundColor = "{theme["background"]}"\n')
-        f.write(f'secondaryBackgroundColor = "{theme["card_bg"]}"\n')
-        f.write(f'textColor = "{theme["text"]}"\n')
-        f.write(f'font = "{theme["font"]}"\n')
-        
-        # Write server section
-        f.write("\n[server]\n")
-        f.write("headless = true\n")
-        f.write("address = \"0.0.0.0\"\n")
-        f.write("port = 5000\n")
+    # This is a placeholder for now
+    # In a full implementation, we would modify .streamlit/config.toml
+    pass
 
 def save_theme_preference(theme_id: str) -> None:
     """
@@ -177,12 +153,13 @@ def save_theme_preference(theme_id: str) -> None:
     Args:
         theme_id: ID of the theme to save
     """
-    # Create the user preferences directory if it doesn't exist
-    os.makedirs("data/user", exist_ok=True)
-    
-    # Write the preference to a JSON file
-    with open("data/user/theme_preference.json", "w") as f:
-        json.dump({"theme": theme_id}, f)
+    preferences = {"theme": theme_id}
+    try:
+        os.makedirs("data", exist_ok=True)
+        with open("data/user_preferences.json", "w") as f:
+            json.dump(preferences, f)
+    except Exception as e:
+        st.error(f"Error saving theme preference: {str(e)}")
 
 def load_theme_preference() -> str:
     """
@@ -192,11 +169,13 @@ def load_theme_preference() -> str:
         Theme ID from saved preferences, or 'calm' if not found
     """
     try:
-        with open("data/user/theme_preference.json", "r") as f:
-            preferences = json.load(f)
-            return preferences.get("theme", "calm")
-    except (FileNotFoundError, json.JSONDecodeError):
-        return "calm"
+        if os.path.exists("data/user_preferences.json"):
+            with open("data/user_preferences.json", "r") as f:
+                preferences = json.load(f)
+                return preferences.get("theme", "calm")
+    except Exception:
+        pass
+    return "calm"  # Default theme
 
 def get_current_theme() -> str:
     """
@@ -205,11 +184,13 @@ def get_current_theme() -> str:
     Returns:
         Current theme ID
     """
-    if THEME_KEY not in st.session_state:
-        theme_id = load_theme_preference()
-        st.session_state[THEME_KEY] = theme_id
+    if hasattr(st.session_state, "theme") and st.session_state.theme:
+        return st.session_state.theme
     
-    return st.session_state[THEME_KEY]
+    # Load from preferences
+    theme_id = load_theme_preference()
+    st.session_state.theme = theme_id
+    return theme_id
 
 def inject_custom_css() -> None:
     """
@@ -218,152 +199,103 @@ def inject_custom_css() -> None:
     theme_id = get_current_theme()
     theme = get_theme(theme_id)
     
-    # Convert theme primary to RGB format
-    primary_hex = theme["primary"].lstrip('#')
-    primary_rgb = f"rgb({int(primary_hex[0:2], 16)}, {int(primary_hex[2:4], 16)}, {int(primary_hex[4:6], 16)})"
-    
-    # Create CSS with theme variables
-    custom_css = f"""
+    css = f"""
     <style>
-    /* Theme variables */
-    :root {{
-        --primary: {theme["primary"]};
-        --secondary: {theme["secondary"]};
-        --background: {theme["background"]};
-        --text: {theme["text"]};
-        --card-bg: {theme["card_bg"]};
-        --sidebar-bg: {theme["sidebar_bg"]};
-        --success: {theme["success"]};
-        --error: {theme["error"]};
-        --warning: {theme["warning"]};
-        --info: {theme["info"]};
-        --font: {theme["font"]};
-        --primary-rgb: {primary_rgb};
-    }}
-    
-    /* Custom styling using theme variables */
-    .custom-card {{
-        background-color: var(--card-bg);
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }}
-    
-    .custom-card:hover {{
-        transform: translateY(-5px);
-        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
-    }}
-    
-    .custom-button {{
-        background-color: var(--primary);
-        color: white;
-        border: none;
-        border-radius: 5px;
-        padding: 10px 20px;
-        font-weight: bold;
-        transition: background-color 0.3s ease, transform 0.2s ease;
-    }}
-    
-    .custom-button:hover {{
-        background-color: var(--secondary);
-        transform: scale(1.05);
-    }}
-    
-    .theme-card {{
-        border: 2px solid transparent;
-        border-radius: 8px;
-        padding: 10px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }}
-    
-    .theme-card:hover {{
-        border-color: var(--primary);
-        transform: translateY(-5px);
-    }}
-    
-    .theme-card.selected {{
-        border-color: var(--primary);
-        background-color: rgba(var(--primary-rgb), 0.1);
-    }}
-    
-    /* Status messages */
-    .success-message {{
-        background-color: var(--success);
-        color: white;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }}
-    
-    .error-message {{
-        background-color: var(--error);
-        color: white;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }}
-    
-    .warning-message {{
-        background-color: var(--warning);
-        color: white;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }}
-    
-    .info-message {{
-        background-color: var(--info);
-        color: white;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }}
+        :root {{
+            --primary-color: {theme['primary']};
+            --background-color: {theme['background']};
+            --secondary-color: {theme['secondary']};
+            --text-color: {theme['text']};
+            --accent-color: {theme['accent']};
+            --font-family: {theme['font']};
+        }}
+        
+        .stApp {{
+            background-color: var(--background-color);
+        }}
+        
+        h1, h2, h3, h4, h5, h6 {{
+            color: var(--primary-color);
+            font-family: var(--font-family);
+        }}
+        
+        p, li, span, div {{
+            color: var(--text-color);
+            font-family: var(--font-family);
+        }}
+        
+        .stButton>button {{
+            background-color: var(--primary-color);
+            color: white;
+        }}
+        
+        .stTextInput>div>div>input {{
+            border-color: var(--primary-color);
+        }}
+        
+        .custom-card {{
+            border: 1px solid #eee;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            background-color: white;
+            transition: transform 0.2s;
+        }}
+        
+        .custom-card:hover {{
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }}
+        
+        .theme-preview {{
+            border-radius: 8px;
+            padding: 10px;
+            margin: 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+            color: white;
+        }}
+        
+        .theme-preview:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }}
     </style>
     """
     
-    # Inject the CSS
-    st.markdown(custom_css, unsafe_allow_html=True)
+    st.markdown(css, unsafe_allow_html=True)
 
 def render_theme_selector() -> None:
     """
     Render the theme selector UI component.
     """
-    # Get current theme
     current_theme_id = get_current_theme()
     
-    # Create columns for displaying themes
-    num_themes = len(THEMES)
-    if num_themes <= 3:
-        columns = st.columns(num_themes)
-    else:
-        columns = st.columns(3)
+    # Display theme options in a grid
+    st.write("Select a theme:")
     
-    # Show themes in columns
-    theme_items = list(THEMES.items())
-    for i, (theme_id, theme) in enumerate(theme_items):
-        col_index = i % len(columns)
-        
-        with columns[col_index]:
-            # Display theme card
+    # Create a grid of theme options
+    cols = st.columns(3)
+    themes = get_available_themes()
+    
+    for i, (theme_id, theme_name) in enumerate(themes):
+        theme = get_theme(theme_id)
+        with cols[i % 3]:
             st.markdown(f"""
-            <div class="theme-card {'selected' if current_theme_id == theme_id else ''}">
-                <h4>{theme["name"]}</h4>
-                <div style="width:100%; height:20px; background-color:{theme['primary']}; 
-                            margin-bottom:5px; border-radius:4px;"></div>
-                <div style="width:100%; height:20px; background-color:{theme['secondary']}; 
-                            margin-bottom:10px; border-radius:4px;"></div>
-                <p style="font-size:12px;">{theme["description"]}</p>
+            <div class="theme-preview" style="background-color:{theme['primary']};" 
+                 onclick="alert('Theme selected!')">
+                {theme_name}
             </div>
             """, unsafe_allow_html=True)
             
-            # Button to select this theme
-            if st.button(f"Select {theme['name']}", key=f"theme_{theme_id}"):
+            if st.button(f"Select {theme_name}", key=f"theme_{theme_id}"):
                 apply_theme(theme_id)
-                st.success(f"{theme['name']} theme applied!")
                 st.rerun()
+    
+    # Show theme description
+    st.markdown(f"**{get_theme_description(current_theme_id)}**")
 
 def suggest_theme_based_on_content(text: str) -> Optional[str]:
     """
@@ -375,30 +307,30 @@ def suggest_theme_based_on_content(text: str) -> Optional[str]:
     Returns:
         Suggested theme ID or None if no strong suggestion
     """
-    # Simple keyword-based mood detection (placeholder for more sophisticated NLP)
+    # This is a simple keyword-based approach
+    # In a full implementation, this would use NLP for sentiment analysis
+    
     text = text.lower()
     
-    # Define mood keywords
-    calm_keywords = ["peace", "calm", "relax", "gentle", "quiet", "serene", "tranquil"]
-    focus_keywords = ["focus", "concentrate", "study", "academic", "research", "learn"]
-    energetic_keywords = ["energy", "creative", "inspire", "motivate", "action", "exciting"]
-    soothing_keywords = ["soothe", "comfort", "gentle", "soft", "pleasant", "healing"]
-    classic_keywords = ["classic", "traditional", "historic", "scholarly", "academic", "formal"]
+    if any(word in text for word in ["calm", "peace", "relax", "sooth", "tranquil"]):
+        return "calm"
     
-    # Count keyword occurrences
-    mood_scores = {
-        "calm": sum(1 for word in calm_keywords if word in text),
-        "focus": sum(1 for word in focus_keywords if word in text),
-        "energetic": sum(1 for word in energetic_keywords if word in text),
-        "soothing": sum(1 for word in soothing_keywords if word in text),
-        "classic": sum(1 for word in classic_keywords if word in text)
-    }
+    if any(word in text for word in ["nature", "tree", "forest", "green", "earth"]):
+        return "forest"
     
-    # Find the mood with highest score
-    max_score = max(mood_scores.values())
-    max_mood = max(mood_scores.items(), key=lambda x: x[1])[0]
+    if any(word in text for word in ["warm", "orange", "sunset", "sun", "bright"]):
+        return "sunset"
     
-    # Only suggest if score is significant
-    if max_score > 2:
-        return max_mood
-    return None
+    if any(word in text for word in ["purple", "dream", "imagine", "creative", "night"]):
+        return "lavender"
+    
+    if any(word in text for word in ["dark", "night", "midnight", "evening", "low light"]):
+        return "dark"
+    
+    if any(word in text for word in ["focus", "concentrate", "study", "work", "productive"]):
+        return "focus"
+    
+    if any(word in text for word in ["creative", "art", "design", "vibrant", "color"]):
+        return "creative"
+    
+    return None  # No strong preference detected
