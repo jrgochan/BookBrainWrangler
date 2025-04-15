@@ -146,11 +146,10 @@ def render_home_page():
     st.subheader("Your Library at a Glance")
     
     # Get statistics
-    from book_manager.manager import BookManager
-    book_manager = BookManager()
+    from book_manager.manager_helpers import count_books, count_categories
     
-    total_books = book_manager.count_books()
-    total_categories = book_manager.count_categories()
+    total_books = count_books()
+    total_categories = count_categories()
     kb_documents = len(st.session_state.knowledge_base.get_documents())
     
     # Create metrics
@@ -210,7 +209,8 @@ def render_home_page():
     st.subheader("Recent Activity")
     
     # Get recent books
-    recent_books = book_manager.get_recent_books(limit=5)
+    from book_manager.manager_helpers import get_recent_books
+    recent_books = get_recent_books(limit=5)
     
     if recent_books:
         for book in recent_books:
