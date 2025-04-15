@@ -69,8 +69,9 @@ def init_session_state():
             st.session_state.thumbnail_cache = {}
             
         # Initialize notification system
-        from utils.notifications import load_notifications
-        st.session_state.notifications = load_notifications()
+        from utils.notifications import NotificationManager
+        st.session_state.notification_manager = NotificationManager()
+        st.session_state.notifications = st.session_state.notification_manager.notifications
         
         logger.info("Session state initialized")
 
@@ -112,7 +113,7 @@ def render_sidebar():
             st.rerun()
             
         # Show number of unread notifications
-        from utils.notifications import count_unread_notifications
+        from utils.notification_helpers import count_unread_notifications
         unread_count = count_unread_notifications(st.session_state.notifications)
         if unread_count > 0:
             st.sidebar.markdown(f"<span style='color: red;'>🔔 {unread_count} unread</span>", unsafe_allow_html=True)
