@@ -809,12 +809,46 @@ def show_download_modal(
             add_log(f"Starting download of '{title}' in {format_type} format")
             status_text.text("Downloading from Internet Archive...")
             
-            # Download the file
-            download_path = archive_client.download_book(
-                book_id, 
-                format_type, 
-                lambda progress: progress_bar.progress(max(0.05, progress * 0.5))
-            )
+            # Get format URL from the format type
+            try:
+                # Get available formats
+                formats = archive_client.get_available_formats(book_id)
+                
+                if not formats:
+                    add_log(f"No formats available for '{title}'", "ERROR")
+                    status_text.text("❌ No formats available")
+                    st.error("No downloadable formats available for this book.")
+                    return
+                
+                # Find the requested format
+                format_info = next(
+                    (f for f in formats if f['format'].lower() == format_type.lower()), 
+                    formats[0]  # Default to first format if specified format not available
+                )
+                
+                # Update UI with actual format
+                if format_info['format'].lower() != format_type.lower():
+                    add_log(f"Requested format {format_type} not available, using {format_info['format']} instead", "INFO")
+                
+                # Download the file
+                status_text.text(f"Downloading {format_info['format']} format...")
+                progress_bar.progress(0.1, f"Downloading {format_info['format']} file...")
+                
+                download_path = archive_client.download_book(
+                    book_id, 
+                    format_info['url'],
+                    title,
+                    author
+                )
+                
+                # Update progress after download is complete
+                progress_bar.progress(0.5, "Download complete")
+                
+            except Exception as e:
+                add_log(f"Error getting book formats: {str(e)}", "ERROR")
+                status_text.text("❌ Format error")
+                st.error(f"Error getting book formats: {str(e)}")
+                return
             
             if not download_path:
                 add_log(f"Failed to download book: {title}", "ERROR")
@@ -961,10 +995,20 @@ def bulk_download_modal(
             # Get preferred format
             try:
                 formats = archive_client.get_available_formats(book_id)
-                preferred_formats = [f for f in formats if f in ["PDF", "EPUB", "TEXT", "KINDLE"]]
-                format_type = preferred_formats[0] if preferred_formats else formats[0] if formats else "PDF"
-            except Exception:
-                format_type = "PDF"  # Default to PDF if can't get formats
+                # Filter for preferred formats (PDF, EPUB, etc.)
+                preferred_formats = [f for f in formats if f['format'].upper() in ["PDF", "EPUB", "TEXT", "KINDLE"]]
+                selected_format = preferred_formats[0] if preferred_formats else formats[0] if formats else None
+                
+                if not selected_format:
+                    add_log(f"No formats available for '{title}'", "ERROR")
+                    failed += 1
+                    continue
+                    
+                format_type = selected_format['format']
+            except Exception as e:
+                add_log(f"Error getting formats: {str(e)}", "ERROR")
+                failed += 1
+                continue
             
             try:
                 # Update status
@@ -974,11 +1018,33 @@ def bulk_download_modal(
                 
                 add_log(f"Processing book {idx}/{total_books}: '{title}' by {author}")
                 
-                # Download the file
-                download_path = archive_client.download_book(
-                    book_id, 
-                    format_type=format_type
-                )
+                # Get format details
+                format_info = None
+                if formats:
+                    # Find preferred format
+                    preferred_format_obj = next(
+                        (f for f in formats if f['format'].lower() == format_type.lower()),
+                        None
+                    )
+                    
+                    if preferred_format_obj:
+                        format_info = preferred_format_obj
+                    else:
+                        # Fall back to first format
+                        format_info = formats[0]
+                    
+                    # Download the file
+                    add_log(f"Downloading {format_info['format']} format...")
+                    download_path = archive_client.download_book(
+                        book_id, 
+                        format_info['url'],
+                        title,
+                        author
+                    )
+                else:
+                    add_log(f"No formats available for '{title}'", "ERROR")
+                    failed += 1
+                    continue
                 
                 if not download_path:
                     add_log(f"Failed to download '{title}'", "ERROR")
