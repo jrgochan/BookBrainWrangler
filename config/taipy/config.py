@@ -1,69 +1,52 @@
 """
-Taipy configuration for the Book Knowledge AI application.
+Taipy configuration for Book Knowledge AI application.
 """
-from taipy import Config
-from taipy.config import Scope
 
+from taipy.config import Config
 
-# Define data nodes for application state
-knowledge_base_node_cfg = Config.configure_data_node(
-    id="knowledge_base",
-    scope=Scope.GLOBAL,
-    storage_type="pickle",
-    default_data=None
+# Define application-wide configuration
+
+# Set default values for global settings
+Config.configure_global_app(
+    name="Book Knowledge AI",
+    version="1.0.0",
+    theme="light",
+    debug=True
 )
 
-books_node_cfg = Config.configure_data_node(
-    id="books",
-    scope=Scope.GLOBAL,
-    storage_type="pickle",
-    default_data=[]
-)
-
-search_results_node_cfg = Config.configure_data_node(
-    id="search_results",
-    scope=Scope.GLOBAL,
+# Configure data nodes
+# These are used to store and exchange data between different parts of the application
+Config.configure_data_node(
+    id="books_data",
     storage_type="pickle",
     default_data=[]
 )
 
-# Define tasks for data processing
-load_books_task_cfg = Config.configure_task(
-    id="load_books_task",
-    function=None,  # Will be set at runtime
-    inputs=[],
-    outputs=[books_node_cfg]
+Config.configure_data_node(
+    id="knowledge_base_data",
+    storage_type="pickle",
+    default_data={}
 )
 
-search_archive_task_cfg = Config.configure_task(
-    id="search_archive_task",
-    function=None,  # Will be set at runtime
-    inputs=[],
-    outputs=[search_results_node_cfg]
+Config.configure_data_node(
+    id="chat_history",
+    storage_type="pickle",
+    default_data=[]
 )
 
-# Define scenarios for main application workflows
-main_scenario_cfg = Config.configure_scenario(
-    id="main_scenario",
-    tasks=[load_books_task_cfg, search_archive_task_cfg]
+# Configure job execution settings
+# These control how various background tasks are executed
+Config.configure_job_executions(
+    mode="standalone",
+    max_nb_of_workers=4
 )
 
-# Define global application configuration
-app_config = {
-    "title": "Book Knowledge AI",
-    "theme": {
-        "primary": "#1f77b4",
-        "secondary": "#ff7f0e",
-        "success": "#2ca02c",
-        "info": "#17becf",
-        "warning": "#d62728",
-        "danger": "#e377c2",
-        "light": "#f5f5f5",
-        "dark": "#333333",
-    },
-    "layout": {
-        "page_size": "lg",
-        "control_size": "md",
-        "gap": "15px",
-    },
-}
+# Configure server settings
+Config.configure_server(
+    host="0.0.0.0",
+    port=5000,
+    debug=True
+)
+
+# Load the configuration
+config = Config.load()
