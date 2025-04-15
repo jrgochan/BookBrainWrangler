@@ -812,8 +812,8 @@ def show_download_modal(
             # Download the file
             download_path = archive_client.download_book(
                 book_id, 
-                format_type=format_type, 
-                callback=lambda progress: progress_bar.progress(max(0.05, progress * 0.5))
+                format_type, 
+                lambda progress: progress_bar.progress(max(0.05, progress * 0.5))
             )
             
             if not download_path:
