@@ -329,11 +329,26 @@ def display_book_list_item(
     date = book.get('date', 'Unknown date')
     downloads = book.get('downloads', 0)
     
-    # Create a horizontal list item with improved column layout
+    # Create a horizontal list item with improved column layout and extra spacing
     with st.container(border=True):
-        # Use CSS to improve spacing and text wrapping
+        # Use CSS to improve spacing, add margin, and hover effect for book containers
         st.markdown("""
         <style>
+        div[data-testid="stVerticalBlock"] > div[data-testid^="stHorizontalBlock"] {
+            margin-bottom: 2rem !important;
+        }
+        .archive-book-container {
+            padding: 22px 14px 22px 14px !important;
+            margin-bottom: 18px !important;
+            border-radius: 10px !important;
+            transition: box-shadow 0.2s, background 0.2s;
+            background: #f9fafb;
+            box-shadow: 0 1px 3px rgba(30,136,229,0.04);
+        }
+        .archive-book-container:hover {
+            box-shadow: 0 2px 12px rgba(30,136,229,0.13);
+            background: #f1f8fe;
+        }
         .book-title {
             font-size: 20px;
             font-weight: bold;
@@ -342,14 +357,17 @@ def display_book_list_item(
             overflow-wrap: break-word;
         }
         .book-metadata {
-            margin-bottom: 8px;
-            line-height: 1.4;
+            margin-bottom: 10px;
+            line-height: 1.5;
         }
         .book-section {
-            padding: 10px 0;
+            padding: 12px 0;
         }
         </style>
         """, unsafe_allow_html=True)
+        
+        # Outer div for margin and hover effect
+        st.markdown('<div class="archive-book-container">', unsafe_allow_html=True)
         
         # Use a more balanced column layout for better responsive design
         cols = st.columns([0.2, 0.55, 0.25])
