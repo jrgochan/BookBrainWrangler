@@ -1018,33 +1018,33 @@ def bulk_download_modal(
                 
                 add_log(f"Processing book {idx}/{total_books}: '{title}' by {author}")
                 
-                # Get format details
+                # Get format details from the selected format
                 format_info = None
-                if formats:
-                    # Find preferred format
-                    preferred_format_obj = next(
-                        (f for f in formats if f['format'].lower() == format_type.lower()),
-                        None
-                    )
-                    
-                    if preferred_format_obj:
-                        format_info = preferred_format_obj
-                    else:
-                        # Fall back to first format
-                        format_info = formats[0]
-                    
-                    # Download the file
-                    add_log(f"Downloading {format_info['format']} format...")
-                    download_path = archive_client.download_book(
-                        book_id, 
-                        format_info['url'],
-                        title,
-                        author
-                    )
+                
+                # Find preferred format from formats variable already retrieved earlier
+                preferred_format_obj = next(
+                    (f for f in formats if f['format'].lower() == format_type.lower()),
+                    None
+                )
+                
+                if preferred_format_obj:
+                    format_info = preferred_format_obj
+                elif formats:
+                    # Fall back to first format
+                    format_info = formats[0]
                 else:
                     add_log(f"No formats available for '{title}'", "ERROR")
                     failed += 1
                     continue
+                
+                # Download the file
+                add_log(f"Downloading {format_info['format']} format...")
+                download_path = archive_client.download_book(
+                    book_id, 
+                    format_info['url'],
+                    title,
+                    author
+                )
                 
                 if not download_path:
                     add_log(f"Failed to download '{title}'", "ERROR")
